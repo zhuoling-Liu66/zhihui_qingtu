@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧青图校园活动平台</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="aurora aurora-left"></div>
+<div class="aurora aurora-right"></div>
+<div class="shell">
+    <aside class="sidebar reveal">
+        <div class="brand">
+            <p class="brand-kicker">Campus Activity OS</p>
+            <h1>智慧青图</h1>
+            <p class="brand-desc">大学生第二课堂、志愿服务、校园组队和学分认定一站式服务平台</p>
+        </div>
+        <nav class="nav">
+            <button class="nav-item active" data-target="auth-panel">账号入口</button>
+            <button class="nav-item" data-target="profile-panel">个人中心</button>
+            <button class="nav-item" data-target="activity-panel">活动广场</button>
+            <button class="nav-item" data-target="enrollment-panel">报名记录</button>
+            <button class="nav-item" data-target="team-panel">组队协作</button>
+            <button class="nav-item" data-target="credit-panel">学分管理</button>
+            <button class="nav-item" data-target="recommend-panel">AI 推荐</button>
+        </nav>
+        <section class="sidebar-card">
+            <p class="label">当前登录</p>
+            <h3 id="current-user-name">未登录</h3>
+            <p id="current-user-meta">请先完成登录或注册</p>
+            <button id="logout-btn" class="ghost-btn">退出当前账号</button>
+        </section>
+    </aside>
+
+    <main class="workspace">
+        <header class="topbar reveal">
+            <div>
+                <p class="topbar-kicker">One-stop Activity Service</p>
+                <h2>校园活动、第二课堂、志愿服务、学分认定与组队社交一体化工作台</h2>
+            </div>
+            <div class="topbar-pill">
+                <span id="api-status-dot"></span>
+                <strong>REST API 联调中</strong>
+            </div>
+        </header>
+
+        <section id="message-bar" class="message-bar hidden"></section>
+
+        <section id="auth-panel" class="panel active reveal">
+            <div class="panel-grid two-col">
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">快速注册</p>
+                        <h3>创建学生、老师或管理员账号</h3>
+                    </div>
+                    <form id="register-form" class="form-grid">
+                        <input name="studentNo" placeholder="学号/工号" required>
+                        <input name="userName" placeholder="姓名" required>
+                        <input name="userPhone" placeholder="手机号">
+                        <input name="userEmail" placeholder="邮箱">
+                        <select name="userRole" required>
+                            <option value="1">学生</option>
+                            <option value="2">管理员</option>
+                            <option value="3">老师</option>
+                        </select>
+                        <input name="major" placeholder="专业">
+                        <input name="grade" placeholder="年级">
+                        <input name="password" type="password" placeholder="密码，至少 6 位" required>
+                        <button type="submit" class="primary-btn">提交注册</button>
+                    </form>
+                </article>
+
+                <article class="card accent-card">
+                    <div class="card-head">
+                        <p class="label">账号登录</p>
+                        <h3>进入校园活动工作台</h3>
+                    </div>
+                    <form id="login-form" class="form-grid">
+                        <input name="studentNo" placeholder="学号/工号" required>
+                        <input name="password" type="password" placeholder="密码" required>
+                        <button type="submit" class="primary-btn">立即登录</button>
+                    </form>
+                    <div class="tips">
+                        <p>系统使用学号/工号作为用户主键，登录后的用户 ID 就是学号或工号。</p>
+                        <p>活动 ID 自动生成，创建活动时不需要手动填写。</p>
+                        <p>活动标签请优先参考活动广场里的可用标签列表。</p>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="profile-panel" class="panel reveal">
+            <div class="panel-grid two-col">
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">个人资料</p>
+                        <h3>查看当前用户信息</h3>
+                    </div>
+                    <div id="profile-view" class="info-board empty-state">登录后可查看个人资料</div>
+                    <button id="refresh-profile-btn" class="secondary-btn">刷新资料</button>
+                </article>
+
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">资料维护</p>
+                        <h3>更新资料与兴趣标签</h3>
+                    </div>
+                    <form id="profile-form" class="form-grid">
+                        <input name="userName" placeholder="姓名">
+                        <input name="userPhone" placeholder="手机号">
+                        <input name="userEmail" placeholder="邮箱">
+                        <input name="major" placeholder="专业">
+                        <input name="grade" placeholder="年级">
+                        <button type="submit" class="primary-btn">更新资料</button>
+                    </form>
+                    <div class="tips plain-tips">
+                        <p>兴趣标签复用活动标签体系，下面会同步展示当前可选标签。</p>
+                    </div>
+                    <div id="interest-tag-board" class="tag-chip-grid empty-state">正在加载可用标签</div>
+                    <form id="interest-form" class="form-grid compact">
+                        <input name="tagIds" placeholder="兴趣标签 ID，如 1,2,3">
+                        <button type="submit" class="secondary-btn">更新兴趣标签</button>
+                    </form>
+                    <div class="inline-actions">
+                        <button id="load-history-btn" class="ghost-btn">查看参与历史</button>
+                        <button id="load-overview-btn" class="ghost-btn">查看学分总览</button>
+                    </div>
+                    <div id="profile-extra" class="result-box empty-state">暂无更多数据</div>
+                </article>
+            </div>
+        </section>
+
+        <section id="activity-panel" class="panel reveal">
+            <div class="panel-grid two-col">
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">活动发布</p>
+                        <h3>发布、编辑、流转与删除活动</h3>
+                    </div>
+                    <div class="tips plain-tips">
+                        <p>活动 ID 自动生成，创建成功后系统会在提示中返回活动 ID。</p>
+                        <p id="activity-mode-tip">第二课堂学分活动需要填写学分和学分类型。</p>
+                    </div>
+                    <div id="activity-tag-board" class="tag-chip-grid empty-state">正在加载可用标签</div>
+                    <form id="activity-create-form" class="form-grid">
+                        <input name="activityTitle" placeholder="活动标题" required>
+                        <textarea name="activityDesc" placeholder="活动描述"></textarea>
+                        <select id="activity-type-select" name="activityType">
+                            <option value="1">第二课堂学分活动</option>
+                            <option value="2">志愿服务活动</option>
+                            <option value="3">运动健身活动</option>
+                            <option value="4">兴趣团建活动</option>
+                        </select>
+                        <div id="activity-credit-wrapper">
+                            <input name="activityCredit" type="number" min="0" step="0.05" placeholder="活动学分">
+                        </div>
+                        <div id="activity-credit-type-wrapper">
+                            <select name="creditType">
+                                <option value="">请选择学分类型</option>
+                                <option value="1">创新创业</option>
+                                <option value="2">智育</option>
+                                <option value="3">德育</option>
+                                <option value="4">体育</option>
+                                <option value="5">美育</option>
+                                <option value="6">劳育</option>
+                            </select>
+                        </div>
+                        <div id="activity-volunteer-hours-wrapper" class="hidden">
+                            <input name="volunteerHours" type="number" min="0" step="0.5" placeholder="志愿服务时长（小时）">
+                        </div>
+                        <input name="startTime" type="datetime-local" required>
+                        <input name="endTime" type="datetime-local" required>
+                        <input name="activityLocation" placeholder="活动地点">
+                        <input name="maxParticipant" type="number" min="0" placeholder="最大参与人数" required>
+                        <input name="tagIds" placeholder="标签 ID，如 1,2,3">
+                        <button type="submit" class="primary-btn">创建活动</button>
+                    </form>
+
+                    <form id="activity-status-form" class="form-grid compact bordered">
+                        <input name="activityId" type="number" placeholder="活动ID" required>
+                        <select name="activityStatus">
+                            <option value="0">草稿</option>
+                            <option value="1">已发布</option>
+                            <option value="2">进行中</option>
+                            <option value="3">已结束</option>
+                            <option value="4">已取消</option>
+                        </select>
+                        <button type="submit" class="secondary-btn">更新状态</button>
+                    </form>
+
+                    <form id="activity-delete-form" class="form-grid compact bordered">
+                        <input name="activityId" type="number" placeholder="要删除的活动ID" required>
+                        <button type="submit" class="ghost-btn danger-btn">删除活动</button>
+                    </form>
+                </article>
+
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">活动查询</p>
+                        <h3>筛选查看活动广场</h3>
+                    </div>
+                    <form id="activity-query-form" class="toolbar">
+                        <input name="keyword" placeholder="关键词">
+                        <select name="activityType">
+                            <option value="">全部类型</option>
+                            <option value="1">第二课堂</option>
+                            <option value="2">志愿服务</option>
+                            <option value="3">运动健身</option>
+                            <option value="4">兴趣团建</option>
+                        </select>
+                        <select name="activityStatus">
+                            <option value="">全部状态</option>
+                            <option value="0">草稿</option>
+                            <option value="1">已发布</option>
+                            <option value="2">进行中</option>
+                            <option value="3">已结束</option>
+                            <option value="4">已取消</option>
+                        </select>
+                        <button type="submit" class="ghost-btn">刷新列表</button>
+                    </form>
+                    <div id="activity-list" class="list-grid empty-state">暂无活动数据</div>
+                </article>
+            </div>
+        </section>
+
+        <section id="enrollment-panel" class="panel reveal">
+            <div class="panel-grid two-col">
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">参与管理</p>
+                        <h3>报名、签到、评价一体处理</h3>
+                    </div>
+                    <form id="enroll-form" class="form-grid compact">
+                        <input name="activityId" type="number" placeholder="活动ID" required>
+                        <button type="submit" class="primary-btn">立即报名</button>
+                    </form>
+                    <form id="enroll-review-form" class="form-grid compact bordered">
+                        <input name="enrollId" type="number" placeholder="报名ID" required>
+                        <select name="enrollStatus">
+                            <option value="1">审核通过</option>
+                            <option value="2">审核驳回</option>
+                        </select>
+                        <button type="submit" class="secondary-btn">报名审核</button>
+                    </form>
+                    <form id="enroll-feedback-form" class="form-grid compact bordered">
+                        <input name="enrollId" type="number" placeholder="报名ID" required>
+                        <input name="feedbackScore" type="number" min="1" max="5" placeholder="评分">
+                        <textarea name="feedbackContent" placeholder="评价内容"></textarea>
+                        <button type="submit" class="secondary-btn">提交评价</button>
+                    </form>
+                </article>
+
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">报名记录</p>
+                        <h3>查询与快捷操作</h3>
+                    </div>
+                    <form id="enrollment-query-form" class="toolbar">
+                        <input name="activityId" type="number" placeholder="活动ID">
+                        <select name="enrollStatus">
+                            <option value="">全部状态</option>
+                            <option value="0">待审核</option>
+                            <option value="1">已通过</option>
+                            <option value="2">已驳回</option>
+                            <option value="3">已签到</option>
+                            <option value="4">已完成</option>
+                        </select>
+                        <button type="submit" class="ghost-btn">刷新记录</button>
+                    </form>
+                    <div class="inline-actions">
+                        <button id="sign-in-btn" class="ghost-btn">签到指定报名</button>
+                        <button id="cancel-enroll-btn" class="ghost-btn">取消指定报名</button>
+                    </div>
+                    <div id="enrollment-list" class="list-grid empty-state">暂无报名记录</div>
+                </article>
+            </div>
+        </section>
+
+        <section id="team-panel" class="panel reveal">
+            <div class="panel-grid two-col">
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">组队中心</p>
+                        <h3>创建队伍与成员审核</h3>
+                    </div>
+                    <form id="team-create-form" class="form-grid">
+                        <input name="activityId" type="number" placeholder="关联活动ID">
+                        <input name="teamName" placeholder="队伍名称" required>
+                        <textarea name="teamDesc" placeholder="队伍简介"></textarea>
+                        <input name="maxSize" type="number" min="0" placeholder="最大人数" required>
+                        <button type="submit" class="primary-btn">创建队伍</button>
+                    </form>
+                    <form id="team-review-form" class="form-grid compact bordered">
+                        <input name="teamId" type="number" placeholder="队伍ID" required>
+                        <input name="memberId" type="number" placeholder="成员记录ID" required>
+                        <select name="memberStatus">
+                            <option value="1">审核通过</option>
+                            <option value="2">审核驳回</option>
+                        </select>
+                        <button type="submit" class="secondary-btn">审核成员</button>
+                    </form>
+                </article>
+
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">队伍操作</p>
+                        <h3>加入、退出、解散与查询</h3>
+                    </div>
+                    <form id="team-query-form" class="toolbar">
+                        <input name="activityId" type="number" placeholder="活动ID">
+                        <select name="teamStatus">
+                            <option value="">全部状态</option>
+                            <option value="0">招募中</option>
+                            <option value="1">已满员</option>
+                            <option value="2">已解散</option>
+                        </select>
+                        <button type="submit" class="ghost-btn">刷新队伍</button>
+                    </form>
+                    <div class="inline-actions wrap">
+                        <button id="join-team-btn" class="ghost-btn">申请加入队伍</button>
+                        <button id="exit-team-btn" class="ghost-btn">退出队伍</button>
+                        <button id="dismiss-team-btn" class="ghost-btn">解散队伍</button>
+                    </div>
+                    <div id="team-list" class="list-grid empty-state">暂无队伍数据</div>
+                </article>
+            </div>
+        </section>
+
+        <section id="credit-panel" class="panel reveal">
+            <div class="panel-grid two-col">
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">学分统计</p>
+                        <h3>个人学分一览</h3>
+                    </div>
+                    <div id="credit-statistics" class="stats-grid empty-state">登录后可查看学分统计</div>
+                    <button id="refresh-credit-stats-btn" class="secondary-btn">刷新统计</button>
+                </article>
+
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">学分审核与列表</p>
+                        <h3>查询学分记录并执行审核</h3>
+                    </div>
+                    <form id="credit-query-form" class="toolbar">
+                        <select name="verifyStatus">
+                            <option value="">全部审核状态</option>
+                            <option value="0">待审核</option>
+                            <option value="1">已通过</option>
+                            <option value="2">已驳回</option>
+                        </select>
+                        <select name="creditType">
+                            <option value="">全部学分类型</option>
+                            <option value="1">创新创业</option>
+                            <option value="2">智育</option>
+                            <option value="3">德育</option>
+                            <option value="4">体育</option>
+                            <option value="5">美育</option>
+                            <option value="6">劳育</option>
+                        </select>
+                        <button type="submit" class="ghost-btn">刷新记录</button>
+                    </form>
+                    <form id="credit-review-form" class="form-grid compact bordered">
+                        <input name="recordId" type="number" placeholder="学分记录ID" required>
+                        <select name="verifyStatus">
+                            <option value="1">审核通过</option>
+                            <option value="2">审核驳回</option>
+                        </select>
+                        <input name="rejectReason" placeholder="驳回原因">
+                        <button type="submit" class="secondary-btn">提交审核</button>
+                    </form>
+                    <div id="credit-list" class="list-grid empty-state">暂无学分数据</div>
+                </article>
+            </div>
+        </section>
+
+        <section id="recommend-panel" class="panel reveal">
+            <div class="panel-grid two-col">
+                <article class="card accent-card">
+                    <div class="card-head">
+                        <p class="label">AI 推荐预留接口</p>
+                        <h3>发起推荐请求与记录推荐日志</h3>
+                    </div>
+                    <div id="recommend-tag-board" class="tag-chip-grid light empty-state">正在加载可用标签</div>
+                    <form id="recommend-form" class="form-grid">
+                        <input name="grade" placeholder="年级">
+                        <input name="major" placeholder="专业">
+                        <input name="interestTagIds" placeholder="兴趣标签ID，如 1,2,3">
+                        <input name="creditGap" type="number" min="0" step="0.05" placeholder="学分缺口">
+                        <input name="availableTimeSlots" placeholder="空闲时间，如 周三晚,周六上午">
+                        <input name="limit" type="number" min="1" max="20" value="10">
+                        <button type="submit" class="primary-btn">查询推荐</button>
+                    </form>
+                    <form id="recommend-log-form" class="form-grid compact bordered">
+                        <input name="activityId" type="number" placeholder="活动ID" required>
+                        <select name="isClick">
+                            <option value="1">已点击</option>
+                            <option value="0">未点击</option>
+                        </select>
+                        <select name="isEnroll">
+                            <option value="1">已报名</option>
+                            <option value="0">未报名</option>
+                        </select>
+                        <button type="submit" class="secondary-btn">记录推荐日志</button>
+                    </form>
+                </article>
+
+                <article class="card">
+                    <div class="card-head">
+                        <p class="label">推荐结果</p>
+                        <h3>推荐活动 ID、分数与理由</h3>
+                    </div>
+                    <div id="recommend-result" class="result-box empty-state">等待发起推荐请求</div>
+                </article>
+            </div>
+        </section>
+    </main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
