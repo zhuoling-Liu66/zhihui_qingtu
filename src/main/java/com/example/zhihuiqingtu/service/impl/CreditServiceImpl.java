@@ -38,13 +38,19 @@ public class CreditServiceImpl implements CreditService {
 
     @Override
     public PageResponse<CreditRecordResponse> queryCredits(CreditQueryRequest request) {
-        LambdaQueryWrapper<CreditRecord> queryWrapper = new LambdaQueryWrapper<CreditRecord>()
-                .eq(request.getUserId() != null, CreditRecord::getUserId, request.getUserId())
-                .eq(request.getVerifyStatus() != null, CreditRecord::getVerifyStatus, request.getVerifyStatus())
+        //构造一个条件构造器，
+        LambdaQueryWrapper<CreditRecord> queryWrapper = new LambdaQueryWrapper<CreditRecord>()//创建一个查询条件对象，查询 CreditRecord 这张表的数据
+                .eq(request.getUserId() != null, CreditRecord::getUserId, request.getUserId())//如果 request.getUserId() 不为空，就加一个条件 user_id = request.getUserId()
+                .eq(request.getVerifyStatus() != null, CreditRecord::getVerifyStatus, request.getVerifyStatus())//同理
                 .eq(request.getCreditType() != null, CreditRecord::getCreditType, request.getCreditType())
                 .orderByDesc(CreditRecord::getCreateTime);
+        /*
+        request.getUserId() != null是否要 加这个条件
+            CreditRecord::getUserId查询哪一个字段
+            request.getUserId()字段要等于什么值
+         */
         Page<CreditRecord> page = creditRecordRepository.selectPage(
-                new Page<>(request.getPageNo() + 1L, request.getPageSize()),
+                new Page<>(request.getPageNo() + 1L, request.getPageSize()),//前端传回来的页面是从0开始的，所以这里要加1
                 queryWrapper
         );
         Page<CreditRecordResponse> responsePage = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
