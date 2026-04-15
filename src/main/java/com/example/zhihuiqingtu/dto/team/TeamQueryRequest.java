@@ -18,6 +18,10 @@ public class TeamQueryRequest {
      */
     private Integer teamStatus;
 
+    private String leaderUserId;
+
+    private String memberUserId;
+
     /**
      * 页码。
      */

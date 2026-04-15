@@ -3,7 +3,7 @@
     <section class="page-section">
       <div v-if="!user" class="card-surface empty-login">
         <h2>登录后查看我发布的活动</h2>
-        <p>这里会集中展示你发布的活动，并提供状态切换和签到开关设置。</p>
+        <p>这里会集中展示你发布的活动，并提供编辑、删除、状态切换和签到开关设置。</p>
       </div>
 
       <template v-else>
@@ -11,7 +11,7 @@
           <div>
             <p class="section-head__kicker">我的活动</p>
             <h1>我发布的活动</h1>
-            <p>创建后的活动默认已发布。你可以在这里统一切换“已发布 / 已取消”，并控制签到开关。</p>
+            <p>你可以在这里统一管理自己发布的活动，删除活动时会连同报名、学分、组队和推荐日志一起清除。</p>
           </div>
           <el-button type="warning" size="large" @click="router.push('/publish')">继续发布活动</el-button>
         </section>
@@ -53,6 +53,17 @@
               </div>
 
               <div class="manage-card__actions">
+                <el-button plain @click="router.push({ name: 'publish', query: { edit: activity.activityId } })">
+                  编辑活动
+                </el-button>
+                <el-button
+                  v-if="activity.activityType === 1"
+                  type="warning"
+                  plain
+                  @click="router.push({ name: 'credit-review', query: { activityId: activity.activityId } })"
+                >
+                  学分审核
+                </el-button>
                 <el-button
                   v-if="activity.activityStatus !== 4"
                   plain
@@ -68,6 +79,7 @@
                 >
                   重新发布
                 </el-button>
+                <el-button type="danger" plain @click="removeActivity(activity)">删除活动</el-button>
                 <el-button @click="router.push({ name: 'activity-detail', params: { id: activity.activityId } })">
                   查看详情
                 </el-button>
@@ -83,7 +95,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import CoverImage from '@/components/CoverImage.vue'
 import { activityApi } from '@/api/platform'
 import { useSession } from '@/composables/useSession'
@@ -95,9 +107,7 @@ const { user } = useSession()
 const activities = ref([])
 
 const loadActivities = async () => {
-  if (!user.value?.userId) {
-    return
-  }
+  if (!user.value?.userId) return
   const page = await activityApi.list({
     publisherUserId: user.value.userId,
     pageNo: 0,
@@ -121,6 +131,22 @@ const toggleSignIn = async (activity, value) => {
     signInEnabled: value ? 1 : 0,
   })
   ElMessage.success(value ? '签到已开启' : '签到已关闭')
+  await loadActivities()
+}
+
+const removeActivity = async (activity) => {
+  await ElMessageBox.confirm(
+    `删除“${activity.activityTitle}”后，相关报名、学分、组队和推荐日志都会一起清除，是否继续？`,
+    '删除活动确认',
+    {
+      type: 'warning',
+      confirmButtonText: '确认删除',
+      cancelButtonText: '先不删',
+    },
+  )
+
+  await activityApi.remove(activity.activityId, user.value.userId)
+  ElMessage.success('活动已删除')
   await loadActivities()
 }
 

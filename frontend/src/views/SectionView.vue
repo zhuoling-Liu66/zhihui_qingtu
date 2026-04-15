@@ -67,7 +67,12 @@
             </div>
           </div>
           <div class="team-grid">
-            <article v-for="team in teams" :key="team.teamId" class="team-card">
+            <article
+              v-for="team in teams"
+              :key="team.teamId"
+              class="team-card"
+              @click="router.push({ name: 'team-detail', params: { id: team.teamId } })"
+            >
               <div class="team-card__top">
                 <strong>{{ team.teamName }}</strong>
                 <span>#{{ team.teamId }}</span>

@@ -5,12 +5,15 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.zhihuiqingtu.common.PageResponse;
 import com.example.zhihuiqingtu.dto.credit.CreditQueryRequest;
 import com.example.zhihuiqingtu.dto.credit.ReviewCreditRequest;
+import com.example.zhihuiqingtu.entity.ActivityMain;
 import com.example.zhihuiqingtu.entity.CreditRecord;
 import com.example.zhihuiqingtu.entity.UserInfo;
+import com.example.zhihuiqingtu.enums.ActivityTypeEnum;
 import com.example.zhihuiqingtu.enums.CreditTypeEnum;
 import com.example.zhihuiqingtu.enums.ReviewStatusEnum;
 import com.example.zhihuiqingtu.enums.UserRoleEnum;
 import com.example.zhihuiqingtu.exception.BusinessException;
+import com.example.zhihuiqingtu.repository.ActivityMainRepository;
 import com.example.zhihuiqingtu.repository.CreditRecordRepository;
 import com.example.zhihuiqingtu.repository.UserInfoRepository;
 import com.example.zhihuiqingtu.service.CreditService;
@@ -33,24 +36,21 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CreditServiceImpl implements CreditService {
 
+    private final ActivityMainRepository activityMainRepository;
     private final CreditRecordRepository creditRecordRepository;
     private final UserInfoRepository userInfoRepository;
 
     @Override
     public PageResponse<CreditRecordResponse> queryCredits(CreditQueryRequest request) {
-        //构造一个条件构造器，
-        LambdaQueryWrapper<CreditRecord> queryWrapper = new LambdaQueryWrapper<CreditRecord>()//创建一个查询条件对象，查询 CreditRecord 这张表的数据
-                .eq(request.getUserId() != null, CreditRecord::getUserId, request.getUserId())//如果 request.getUserId() 不为空，就加一个条件 user_id = request.getUserId()
-                .eq(request.getVerifyStatus() != null, CreditRecord::getVerifyStatus, request.getVerifyStatus())//同理
+        LambdaQueryWrapper<CreditRecord> queryWrapper = new LambdaQueryWrapper<CreditRecord>()
+                .eq(request.getUserId() != null, CreditRecord::getUserId, request.getUserId())
+                .eq(request.getVerifyStatus() != null, CreditRecord::getVerifyStatus, request.getVerifyStatus())
                 .eq(request.getCreditType() != null, CreditRecord::getCreditType, request.getCreditType())
+                .eq(request.getActivityId() != null, CreditRecord::getActivityId, request.getActivityId())
                 .orderByDesc(CreditRecord::getCreateTime);
-        /*
-        request.getUserId() != null是否要 加这个条件
-            CreditRecord::getUserId查询哪一个字段
-            request.getUserId()字段要等于什么值
-         */
+
         Page<CreditRecord> page = creditRecordRepository.selectPage(
-                new Page<>(request.getPageNo() + 1L, request.getPageSize()),//前端传回来的页面是从0开始的，所以这里要加1
+                new Page<>(request.getPageNo() + 1L, request.getPageSize()),
                 queryWrapper
         );
         Page<CreditRecordResponse> responsePage = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
@@ -62,15 +62,17 @@ public class CreditServiceImpl implements CreditService {
     @Transactional(rollbackFor = Exception.class)
     public CreditRecordResponse reviewCredit(Long recordId, ReviewCreditRequest request) {
         UserInfo verifier = requireUser(request.getVerifyUserId());
-        if (!UserRoleEnum.ADMIN.getCode().equals(verifier.getUserRole())
-                && !UserRoleEnum.TEACHER.getCode().equals(verifier.getUserRole())) {
-            throw new BusinessException(4401, "仅管理员或老师可以审核学分");
-        }
         if (!ReviewStatusEnum.APPROVED.getCode().equals(request.getVerifyStatus())
                 && !ReviewStatusEnum.REJECTED.getCode().equals(request.getVerifyStatus())) {
             throw new BusinessException(4402, "审核状态仅支持通过或驳回");
         }
+
         CreditRecord creditRecord = requireCreditRecord(recordId);
+        ActivityMain activityMain = requireActivity(creditRecord.getActivityId());
+        if (!canReviewCredit(verifier, activityMain)) {
+            throw new BusinessException(4401, "仅管理员、老师或活动发布者可审核该学分记录");
+        }
+
         creditRecord.setVerifyUserId(request.getVerifyUserId());
         creditRecord.setVerifyStatus(request.getVerifyStatus());
         creditRecord.setRejectReason(request.getRejectReason());
@@ -117,12 +119,29 @@ public class CreditServiceImpl implements CreditService {
                 .build();
     }
 
+    private boolean canReviewCredit(UserInfo verifier, ActivityMain activityMain) {
+        if (UserRoleEnum.ADMIN.getCode().equals(verifier.getUserRole())
+                || UserRoleEnum.TEACHER.getCode().equals(verifier.getUserRole())) {
+            return true;
+        }
+        return ActivityTypeEnum.SECOND_CLASS.getCode().equals(activityMain.getActivityType())
+                && verifier.getStudentNo().equals(activityMain.getPublisherUserId());
+    }
+
     private CreditRecord requireCreditRecord(Long recordId) {
         CreditRecord creditRecord = creditRecordRepository.selectById(recordId);
         if (creditRecord == null) {
             throw new BusinessException(4400, "学分记录不存在");
         }
         return creditRecord;
+    }
+
+    private ActivityMain requireActivity(Long activityId) {
+        ActivityMain activityMain = activityMainRepository.selectById(activityId);
+        if (activityMain == null) {
+            throw new BusinessException(4100, "活动不存在");
+        }
+        return activityMain;
     }
 
     private UserInfo requireUser(String userId) {

@@ -21,16 +21,21 @@ import com.example.zhihuiqingtu.repository.TeamMainRepository;
 import com.example.zhihuiqingtu.repository.TeamMemberRepository;
 import com.example.zhihuiqingtu.repository.UserInfoRepository;
 import com.example.zhihuiqingtu.service.TeamService;
+import com.example.zhihuiqingtu.vo.team.TeamMemberVO;
 import com.example.zhihuiqingtu.vo.team.TeamResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
- * 队伍服务实现。
+ * 组队服务实现。
  */
 @Service
 @RequiredArgsConstructor
@@ -51,6 +56,7 @@ public class TeamServiceImpl implements TeamService {
         if (request.getMaxSize() < 0) {
             throw new BusinessException(4301, "最大人数不能小于0");
         }
+
         int currentSize = 1;
         TeamMain teamMain = TeamMain.builder()
                 .activityId(request.getActivityId())
@@ -59,7 +65,9 @@ public class TeamServiceImpl implements TeamService {
                 .teamDesc(request.getTeamDesc())
                 .maxSize(request.getMaxSize())
                 .currentSize(currentSize)
-                .teamStatus(isFull(request.getMaxSize(), currentSize) ? TeamStatusEnum.FULL.getCode() : TeamStatusEnum.RECRUITING.getCode())
+                .teamStatus(isFull(request.getMaxSize(), currentSize)
+                        ? TeamStatusEnum.FULL.getCode()
+                        : TeamStatusEnum.RECRUITING.getCode())
                 .build();
         teamMainRepository.insert(teamMain);
 
@@ -78,8 +86,28 @@ public class TeamServiceImpl implements TeamService {
         LambdaQueryWrapper<TeamMain> queryWrapper = new LambdaQueryWrapper<TeamMain>()
                 .eq(request.getActivityId() != null, TeamMain::getActivityId, request.getActivityId())
                 .eq(request.getTeamStatus() != null, TeamMain::getTeamStatus, request.getTeamStatus())
+                .eq(StringUtils.hasText(request.getLeaderUserId()), TeamMain::getLeaderUserId, request.getLeaderUserId())
                 .orderByDesc(TeamMain::getCreateTime);
-        Page<TeamMain> page = teamMainRepository.selectPage(new Page<>(request.getPageNo() + 1L, request.getPageSize()), queryWrapper);
+
+        if (StringUtils.hasText(request.getMemberUserId())) {
+            List<TeamMember> memberships = teamMemberRepository.selectList(new LambdaQueryWrapper<TeamMember>()
+                    .eq(TeamMember::getUserId, request.getMemberUserId())
+                    .in(TeamMember::getMemberStatus,
+                            TeamMemberStatusEnum.PENDING.getCode(),
+                            TeamMemberStatusEnum.JOINED.getCode()));
+            if (memberships.isEmpty()) {
+                Page<TeamResponse> emptyPage = new Page<>(request.getPageNo() + 1L, request.getPageSize(), 0);
+                emptyPage.setRecords(Collections.emptyList());
+                return PageResponse.from(emptyPage);
+            }
+            Set<Long> teamIds = memberships.stream().map(TeamMember::getTeamId).collect(Collectors.toSet());
+            queryWrapper.in(TeamMain::getTeamId, teamIds);
+        }
+
+        Page<TeamMain> page = teamMainRepository.selectPage(
+                new Page<>(request.getPageNo() + 1L, request.getPageSize()),
+                queryWrapper
+        );
         Page<TeamResponse> responsePage = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
         responsePage.setRecords(page.getRecords().stream().map(this::toTeamResponse).toList());
         return PageResponse.from(responsePage);
@@ -97,6 +125,9 @@ public class TeamServiceImpl implements TeamService {
         requireUser(request.getUserId());
         if (TeamStatusEnum.DISMISSED.getCode().equals(teamMain.getTeamStatus())) {
             throw new BusinessException(4302, "队伍已解散，无法加入");
+        }
+        if (isFull(teamMain.getMaxSize(), teamMain.getCurrentSize())) {
+            throw new BusinessException(4308, "队伍人数已满");
         }
         if (teamMemberRepository.selectCount(new LambdaQueryWrapper<TeamMember>()
                 .eq(TeamMember::getTeamId, teamId)
@@ -185,12 +216,8 @@ public class TeamServiceImpl implements TeamService {
         teamMain.setTeamStatus(TeamStatusEnum.DISMISSED.getCode());
         teamMain.setCurrentSize(0);
         teamMainRepository.updateById(teamMain);
-
-        List<TeamMember> members = teamMemberRepository.selectList(new LambdaQueryWrapper<TeamMember>()
+        teamMemberRepository.delete(new LambdaQueryWrapper<TeamMember>()
                 .eq(TeamMember::getTeamId, teamId));
-        for (TeamMember member : members) {
-            teamMemberRepository.deleteById(member.getMemberId());
-        }
         return toTeamResponse(teamMain);
     }
 
@@ -199,9 +226,24 @@ public class TeamServiceImpl implements TeamService {
     }
 
     private TeamResponse toTeamResponse(TeamMain teamMain) {
+        ActivityMain activityMain = teamMain.getActivityId() == null ? null : activityMainRepository.selectById(teamMain.getActivityId());
+        List<TeamMemberVO> members = teamMemberRepository.selectList(new LambdaQueryWrapper<TeamMember>()
+                        .eq(TeamMember::getTeamId, teamMain.getTeamId())
+                        .orderByAsc(TeamMember::getMemberStatus)
+                        .orderByDesc(TeamMember::getJoinTime))
+                .stream()
+                .map(member -> TeamMemberVO.builder()
+                        .memberId(member.getMemberId())
+                        .userId(member.getUserId())
+                        .memberStatus(member.getMemberStatus())
+                        .joinTime(member.getJoinTime())
+                        .build())
+                .toList();
+
         return TeamResponse.builder()
                 .teamId(teamMain.getTeamId())
                 .activityId(teamMain.getActivityId())
+                .activityTitle(activityMain == null ? null : activityMain.getActivityTitle())
                 .leaderUserId(teamMain.getLeaderUserId())
                 .teamName(teamMain.getTeamName())
                 .teamDesc(teamMain.getTeamDesc())
@@ -209,6 +251,7 @@ public class TeamServiceImpl implements TeamService {
                 .currentSize(teamMain.getCurrentSize())
                 .teamStatus(teamMain.getTeamStatus())
                 .createTime(teamMain.getCreateTime())
+                .members(members)
                 .build();
     }
 

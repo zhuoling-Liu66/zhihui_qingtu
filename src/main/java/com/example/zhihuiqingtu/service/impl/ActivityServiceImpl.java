@@ -10,8 +10,12 @@ import com.example.zhihuiqingtu.dto.activity.ChangeActivityStatusRequest;
 import com.example.zhihuiqingtu.dto.activity.CreateActivityRequest;
 import com.example.zhihuiqingtu.dto.activity.UpdateActivityRequest;
 import com.example.zhihuiqingtu.entity.ActivityMain;
+import com.example.zhihuiqingtu.entity.ActivityEnroll;
 import com.example.zhihuiqingtu.entity.ActivityTag;
 import com.example.zhihuiqingtu.entity.ActivityTagRel;
+import com.example.zhihuiqingtu.entity.CreditRecord;
+import com.example.zhihuiqingtu.entity.RecommendLog;
+import com.example.zhihuiqingtu.entity.TeamMain;
 import com.example.zhihuiqingtu.entity.UserInfo;
 import com.example.zhihuiqingtu.enums.ActivityStatusEnum;
 import com.example.zhihuiqingtu.enums.ActivityTypeEnum;
@@ -19,8 +23,13 @@ import com.example.zhihuiqingtu.enums.CreditTypeEnum;
 import com.example.zhihuiqingtu.enums.UserRoleEnum;
 import com.example.zhihuiqingtu.exception.BusinessException;
 import com.example.zhihuiqingtu.repository.ActivityMainRepository;
+import com.example.zhihuiqingtu.repository.ActivityEnrollRepository;
 import com.example.zhihuiqingtu.repository.ActivityTagRelRepository;
 import com.example.zhihuiqingtu.repository.ActivityTagRepository;
+import com.example.zhihuiqingtu.repository.CreditRecordRepository;
+import com.example.zhihuiqingtu.repository.RecommendLogRepository;
+import com.example.zhihuiqingtu.repository.TeamMainRepository;
+import com.example.zhihuiqingtu.repository.TeamMemberRepository;
 import com.example.zhihuiqingtu.repository.UserInfoRepository;
 import com.example.zhihuiqingtu.service.ActivityService;
 import com.example.zhihuiqingtu.vo.activity.ActivityCoverUploadResponse;
@@ -60,8 +69,13 @@ public class ActivityServiceImpl implements ActivityService {
     private static final List<String> ALLOWED_IMAGE_EXTENSIONS = List.of(".jpg", ".jpeg", ".png", ".gif", ".webp");
 
     private final ActivityMainRepository activityMainRepository;
+    private final ActivityEnrollRepository activityEnrollRepository;
     private final ActivityTagRepository activityTagRepository;
     private final ActivityTagRelRepository activityTagRelRepository;
+    private final CreditRecordRepository creditRecordRepository;
+    private final RecommendLogRepository recommendLogRepository;
+    private final TeamMainRepository teamMainRepository;
+    private final TeamMemberRepository teamMemberRepository;
     private final UserInfoRepository userInfoRepository;
     private final UploadProperties uploadProperties;
 
@@ -160,9 +174,7 @@ public class ActivityServiceImpl implements ActivityService {
         activityMain.setActivityCredit(normalizeActivityCredit(request.getActivityType(), request.getActivityCredit()));
         activityMain.setCreditType(normalizeCreditType(request.getActivityType(), request.getCreditType()));
         activityMain.setVolunteerHours(normalizeVolunteerHours(request.getActivityType(), request.getVolunteerHours()));
-        if (StringUtils.hasText(request.getCoverUrl())) {
-            activityMain.setCoverUrl(normalizeCoverUrl(request.getCoverUrl()));
-        }
+        activityMain.setCoverUrl(normalizeCoverUrl(request.getCoverUrl()));
         activityMain.setStartTime(request.getStartTime());
         activityMain.setEndTime(request.getEndTime());
         activityMain.setActivityLocation(request.getActivityLocation());
@@ -218,10 +230,23 @@ public class ActivityServiceImpl implements ActivityService {
         UserInfo operator = requireUser(operatorUserId);
         checkActivityManagePermission(activityMain, operator);
 
-        List<ActivityTagRel> relations = activityTagRelRepository.selectList(new LambdaQueryWrapper<ActivityTagRel>()
+        activityTagRelRepository.delete(new LambdaQueryWrapper<ActivityTagRel>()
                 .eq(ActivityTagRel::getActivityId, activityId));
-        for (ActivityTagRel relation : relations) {
-            activityTagRelRepository.deleteById(relation.getRelId());
+        activityEnrollRepository.delete(new LambdaQueryWrapper<ActivityEnroll>()
+                .eq(ActivityEnroll::getActivityId, activityId));
+        creditRecordRepository.delete(new LambdaQueryWrapper<CreditRecord>()
+                .eq(CreditRecord::getActivityId, activityId));
+        recommendLogRepository.delete(new LambdaQueryWrapper<RecommendLog>()
+                .eq(RecommendLog::getActivityId, activityId));
+
+        List<TeamMain> teams = teamMainRepository.selectList(new LambdaQueryWrapper<TeamMain>()
+                .eq(TeamMain::getActivityId, activityId));
+        List<Long> teamIds = teams.stream().map(TeamMain::getTeamId).toList();
+        if (!teamIds.isEmpty()) {
+            teamMemberRepository.delete(new LambdaQueryWrapper<com.example.zhihuiqingtu.entity.TeamMember>()
+                    .in(com.example.zhihuiqingtu.entity.TeamMember::getTeamId, teamIds));
+            teamMainRepository.delete(new LambdaQueryWrapper<TeamMain>()
+                    .in(TeamMain::getTeamId, teamIds));
         }
         activityMainRepository.deleteById(activityId);
     }

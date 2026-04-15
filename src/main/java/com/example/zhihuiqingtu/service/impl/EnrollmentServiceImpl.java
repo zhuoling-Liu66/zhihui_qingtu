@@ -24,6 +24,7 @@ import com.example.zhihuiqingtu.vo.enrollment.EnrollmentResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -67,6 +68,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .enrollStatus(EnrollmentStatusEnum.ENROLLED.getCode())
                 .build();
         activityEnrollRepository.insert(enrollment);
+
         activityMain.setCurrentParticipant(activityMain.getCurrentParticipant() + 1);
         activityMainRepository.updateById(activityMain);
         return toEnrollmentResponse(enrollment, activityMain);
@@ -81,10 +83,9 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         ActivityMain activityMain = requireActivity(enrollment.getActivityId());
-        if (EnrollmentStatusEnum.SIGNED_IN.getCode().equals(enrollment.getEnrollStatus())
-                || EnrollmentStatusEnum.COMPLETED.getCode().equals(enrollment.getEnrollStatus())
+        if (!EnrollmentStatusEnum.ENROLLED.getCode().equals(enrollment.getEnrollStatus())
                 || enrollment.getSignInTime() != null) {
-            throw new BusinessException(4206, "已签到或已完成的活动不能退出");
+            throw new BusinessException(4206, "已完成的活动不能退出");
         }
         if (ActivityStatusEnum.FINISHED.getCode().equals(resolveDisplayStatus(activityMain))) {
             throw new BusinessException(4207, "已结束活动不能退出");
@@ -117,9 +118,10 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             throw new BusinessException(4212, "活动暂未开放签到");
         }
 
-        enrollment.setEnrollStatus(EnrollmentStatusEnum.SIGNED_IN.getCode());
+        enrollment.setEnrollStatus(EnrollmentStatusEnum.COMPLETED.getCode());
         enrollment.setSignInTime(LocalDateTime.now());
         activityEnrollRepository.updateById(enrollment);
+        generateCreditRecord(enrollment, activityMain);
         return toEnrollmentResponse(enrollment, activityMain);
     }
 
@@ -127,16 +129,17 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional(rollbackFor = Exception.class)
     public EnrollmentResponse feedback(Long enrollId, FeedbackEnrollmentRequest request) {
         ActivityEnroll enrollment = requireEnrollment(enrollId);
-        if (!EnrollmentStatusEnum.SIGNED_IN.getCode().equals(enrollment.getEnrollStatus())
-                && !EnrollmentStatusEnum.ENROLLED.getCode().equals(enrollment.getEnrollStatus())) {
-            throw new BusinessException(4213, "当前报名状态不允许提交评价");
+        if (!enrollment.getUserId().equals(request.getUserId())) {
+            throw new BusinessException(4213, "仅可评价自己的活动记录");
+        }
+        if (enrollment.getSignInTime() == null
+                && !EnrollmentStatusEnum.COMPLETED.getCode().equals(enrollment.getEnrollStatus())) {
+            throw new BusinessException(4214, "请先完成签到后再评价活动");
         }
 
         enrollment.setFeedbackScore(request.getFeedbackScore());
         enrollment.setFeedbackContent(request.getFeedbackContent());
-        enrollment.setEnrollStatus(EnrollmentStatusEnum.COMPLETED.getCode());
         activityEnrollRepository.updateById(enrollment);
-        generateCreditRecord(enrollment);
         return toEnrollmentResponse(enrollment, requireActivity(enrollment.getActivityId()));
     }
 
@@ -157,13 +160,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         return PageResponse.from(responsePage);
     }
 
-    private void generateCreditRecord(ActivityEnroll enrollment) {
+    private void generateCreditRecord(ActivityEnroll enrollment, ActivityMain activityMain) {
         if (creditRecordRepository.selectCount(new LambdaQueryWrapper<CreditRecord>()
                 .eq(CreditRecord::getUserId, enrollment.getUserId())
                 .eq(CreditRecord::getActivityId, enrollment.getActivityId())) > 0) {
             return;
         }
-        ActivityMain activityMain = requireActivity(enrollment.getActivityId());
         if (!ActivityTypeEnum.SECOND_CLASS.getCode().equals(activityMain.getActivityType())) {
             return;
         }
@@ -195,11 +197,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 && ActivityStatusEnum.PUBLISHED.getCode().equals(activityMain.getActivityStatus())
                 && EnrollmentStatusEnum.ENROLLED.getCode().equals(enrollment.getEnrollStatus())
                 && !ActivityStatusEnum.FINISHED.getCode().equals(displayStatus);
-        boolean canCancel = !EnrollmentStatusEnum.SIGNED_IN.getCode().equals(enrollment.getEnrollStatus())
-                && !EnrollmentStatusEnum.COMPLETED.getCode().equals(enrollment.getEnrollStatus())
+        boolean canCancel = EnrollmentStatusEnum.ENROLLED.getCode().equals(enrollment.getEnrollStatus())
                 && enrollment.getSignInTime() == null
                 && activityMain != null
                 && !ActivityStatusEnum.FINISHED.getCode().equals(displayStatus);
+        boolean canFeedback = enrollment.getSignInTime() != null
+                && (!StringUtils.hasText(enrollment.getFeedbackContent()) || enrollment.getFeedbackScore() == null);
 
         return EnrollmentResponse.builder()
                 .enrollId(enrollment.getEnrollId())
@@ -219,6 +222,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .feedbackContent(enrollment.getFeedbackContent())
                 .canSignIn(canSignIn)
                 .canCancel(canCancel)
+                .canFeedback(canFeedback)
                 .createTime(enrollment.getCreateTime())
                 .build();
     }

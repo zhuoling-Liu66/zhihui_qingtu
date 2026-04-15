@@ -115,7 +115,12 @@
             </div>
           </div>
           <div class="side-list">
-            <article v-for="team in teamCards" :key="team.teamId" class="team-card">
+            <article
+              v-for="team in teamCards"
+              :key="team.teamId"
+              class="team-card"
+              @click="router.push({ name: 'team-detail', params: { id: team.teamId } })"
+            >
               <div class="team-card__top">
                 <strong>{{ team.teamName }}</strong>
                 <span>队伍 #{{ team.teamId }}</span>

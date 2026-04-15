@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 队伍返回对象。
@@ -25,6 +26,8 @@ public class TeamResponse {
      * 关联活动ID。
      */
     private Long activityId;
+
+    private String activityTitle;
 
     /**
      * 队长学号或工号。
@@ -60,4 +63,6 @@ public class TeamResponse {
      * 创建时间。
      */
     private LocalDateTime createTime;
+
+    private List<TeamMemberVO> members;
 }

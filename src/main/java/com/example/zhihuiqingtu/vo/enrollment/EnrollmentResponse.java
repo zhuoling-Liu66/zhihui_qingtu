@@ -101,6 +101,8 @@ public class EnrollmentResponse {
      */
     private Boolean canCancel;
 
+    private Boolean canFeedback;
+
     /**
      * 创建时间。
      */

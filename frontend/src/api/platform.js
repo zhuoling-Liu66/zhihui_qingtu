@@ -64,6 +64,9 @@ export const enrollApi = {
       params: { userId },
     })
   },
+  feedback(enrollId, payload) {
+    return http.patch(`/enrollments/${enrollId}/feedback`, payload)
+  },
 }
 
 export const userApi = {
@@ -88,6 +91,24 @@ export const teamApi = {
   list(params) {
     return http.get('/teams', { params })
   },
+  detail(teamId) {
+    return http.get(`/teams/${teamId}`)
+  },
+  create(payload) {
+    return http.post('/teams', payload)
+  },
+  join(teamId, payload) {
+    return http.post(`/teams/${teamId}/join`, payload)
+  },
+  reviewMember(teamId, memberId, payload) {
+    return http.patch(`/teams/${teamId}/members/${memberId}/review`, payload)
+  },
+  exit(teamId, memberId, payload) {
+    return http.patch(`/teams/${teamId}/members/${memberId}/exit`, payload)
+  },
+  dismiss(teamId, payload) {
+    return http.patch(`/teams/${teamId}/dismiss`, payload)
+  },
 }
 
 export const creditApi = {
@@ -96,6 +117,9 @@ export const creditApi = {
   },
   statistics(userId) {
     return http.get('/credits/statistics', { params: { userId } })
+  },
+  review(recordId, payload) {
+    return http.patch(`/credits/${recordId}/review`, payload)
   },
 }
 

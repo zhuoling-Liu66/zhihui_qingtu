@@ -12,6 +12,9 @@ import lombok.Data;
 @Data
 public class FeedbackEnrollmentRequest {
 
+    @NotBlank(message = "用户不能为空")
+    private String userId;
+
     /**
      * 活动评分。
      */

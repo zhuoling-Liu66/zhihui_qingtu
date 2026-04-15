@@ -23,6 +23,8 @@ public class CreditQueryRequest {
      */
     private Integer creditType;
 
+    private Long activityId;
+
     /**
      * 页码。
      */

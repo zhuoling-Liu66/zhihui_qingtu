@@ -32,6 +32,16 @@ const routes = [
     component: () => import('@/views/MyJoinedActivitiesView.vue'),
   },
   {
+    path: '/my-teams',
+    name: 'my-teams',
+    component: () => import('@/views/MyTeamsView.vue'),
+  },
+  {
+    path: '/credit-review',
+    name: 'credit-review',
+    component: () => import('@/views/CreditReviewView.vue'),
+  },
+  {
     path: '/profile',
     name: 'profile',
     component: () => import('@/views/ProfileView.vue'),
@@ -40,6 +50,11 @@ const routes = [
     path: '/activities/:id',
     name: 'activity-detail',
     component: () => import('@/views/ActivityDetailView.vue'),
+  },
+  {
+    path: '/teams/:id',
+    name: 'team-detail',
+    component: () => import('@/views/TeamDetailView.vue'),
   },
 ]
 
