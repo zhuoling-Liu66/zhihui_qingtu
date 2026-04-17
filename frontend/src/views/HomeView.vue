@@ -2,7 +2,7 @@
   <main class="page page-home">
     <section class="page-section page-section--announcement">
       <div class="announcement-bar">
-        <span>📣 网页版已升级为校园活动集市风格，支持学分活动、志愿服务、组队邀请和 AI 推荐联动。</span>
+        <span>春季活动簿持续更新，学分活动、志愿服务、校园组队与 AI 推荐都在这一页慢慢展开。</span>
       </div>
     </section>
 
@@ -11,10 +11,16 @@
 
       <div class="hero-grid">
         <article class="hero-promo hero-promo--primary">
-          <div>
+          <div class="hero-promo__content">
             <p class="hero-promo__eyebrow">校园精选</p>
-            <h1>像逛闲鱼一样逛活动</h1>
-            <p>把第二课堂、志愿活动、校园组队和生活互助放进一个轻松好逛的信息流里。</p>
+            <h1>逛活动</h1>
+            <p class="hero-promo__copy">把第二课堂、志愿服务、校园组队和生活互助放进一个轻松好逛的信息流里。</p>
+            <span class="hero-promo__note">新</span>
+          </div>
+          <div class="hero-promo__art" aria-hidden="true">
+            <span class="hero-promo__stamp">2026</span>
+            <div class="hero-promo__building"></div>
+            <span class="hero-promo__caption">Campus Life</span>
           </div>
           <div class="hero-promo__actions">
             <router-link to="/publish" class="hero-pill hero-pill--filled">去发布</router-link>
@@ -29,17 +35,22 @@
           :class="`hero-module--${module.accent}`"
           @click="jumpFeature(module.slug)"
         >
-          <div>
-            <span class="hero-module__badge">{{ module.badge }}</span>
-            <h3>{{ module.title }}</h3>
-            <p>{{ module.subtitle }}</p>
+          <span class="hero-module__badge">{{ module.badge }}</span>
+          <div class="hero-module__copy">
+            <component :is="resolveFeatureIcon(module.icon)" class="hero-module__icon" />
+            <div>
+              <h3>{{ module.title }}</h3>
+              <p>{{ module.subtitle }}</p>
+            </div>
           </div>
+          <span v-if="module.handNote" class="hero-module__handnote">{{ module.handNote }}</span>
+          <span v-if="module.paperNote" class="hero-module__paper">{{ module.paperNote }}</span>
           <strong>{{ module.stat }}</strong>
         </article>
       </div>
     </section>
 
-    <section class="page-section recommendation-strip card-surface">
+    <section class="page-section recommendation-strip">
       <div class="section-head">
         <div>
           <p class="section-head__kicker">猜你喜欢</p>
@@ -56,16 +67,17 @@
           type="button"
           @click="jumpTopic(entry)"
         >
-          <span>{{ entry.icon }}</span>
-          {{ entry.label }}
+          <span class="topic-tab__symbol">{{ entry.icon }}</span>
+          <span class="topic-tab__label">{{ entry.label }}</span>
         </button>
       </div>
 
       <div class="recommend-grid">
         <article class="recommend-card recommend-card--ai">
           <p class="section-head__kicker">AI 推荐</p>
-          <h3>{{ recommendationTitle }}</h3>
+          <h3>AI 推荐</h3>
           <p>{{ recommendationSummary }}</p>
+          <span class="recommend-card__handnote">智能匹配中</span>
           <div class="recommend-card__chips">
             <span v-for="tag in visibleRecommendReasons" :key="tag">{{ tag }}</span>
           </div>
@@ -73,14 +85,14 @@
 
         <article class="recommend-card recommend-card--credit">
           <p class="section-head__kicker">学分专区</p>
-          <h3>第二课堂、德育、体育可直达专题页</h3>
+          <h3>第二课堂与六类学分入口</h3>
           <p>点击顶部标签或左侧悬浮入口，都能进入对应的专门界面。</p>
         </article>
 
         <article class="recommend-card recommend-card--team">
           <p class="section-head__kicker">组队邀请</p>
-          <h3>{{ teamCards.length }} 个正在招募的校园队伍</h3>
-          <p>球搭子、兴趣小队、校园团建，首页右侧就能看到。</p>
+          <h3>校园组队广场</h3>
+          <p>{{ teamCards.length }} 个队伍正在招募，球搭子、兴趣小队、校园团建都能从这里进入。</p>
         </article>
       </div>
     </section>
@@ -88,10 +100,10 @@
     <section id="activity-feed" class="page-section content-grid">
       <section class="feed-main">
         <div class="section-head">
-          <div>
-            <p class="section-head__kicker">活动流</p>
-            <h2>首页精选活动</h2>
-          </div>
+        <div>
+          <p class="section-head__kicker">活动流</p>
+          <h2>逛活动</h2>
+        </div>
           <el-button type="warning" plain @click="router.push({ name: 'search', query: { q: '校园活动' } })">
             进入搜索页
           </el-button>
@@ -161,6 +173,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Clock, Connection, Opportunity, Reading } from '@element-plus/icons-vue'
 import ActivityCard from '@/components/ActivityCard.vue'
 import MegaCategoryRail from '@/components/MegaCategoryRail.vue'
 import { activityApi, recommendationApi, teamApi } from '@/api/platform'
@@ -175,6 +188,13 @@ const tags = ref([])
 const teamCards = ref([])
 const recommendIds = ref([])
 const recommendReasons = ref({})
+
+const featureIconMap = {
+  reading: Reading,
+  clock: Clock,
+  connection: Connection,
+  idea: Opportunity,
+}
 
 const featuredActivities = computed(() =>
   activities.value.filter((item) => [1, 2, 3].includes(item.activityStatus)).slice(0, 9),
@@ -222,6 +242,8 @@ const jumpFeature = (slug) => {
   }
   router.push({ name: 'section', params: { slug } })
 }
+
+const resolveFeatureIcon = (iconKey) => featureIconMap[iconKey] || Reading
 
 const loadHomeData = async () => {
   const [activityPage, tagList, teamPage] = await Promise.all([

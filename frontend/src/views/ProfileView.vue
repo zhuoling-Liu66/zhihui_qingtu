@@ -4,6 +4,10 @@
       <div v-if="!user" class="card-surface empty-login">
         <h2>登录后查看个人中心</h2>
         <p>这里会集中展示你的资料、兴趣标签、第二课堂学分统计和参与历史。</p>
+        <div class="empty-login__actions">
+          <button type="button" class="login-entry-button" @click="openAuth">登录</button>
+          <button type="button" class="empty-login__secondary" @click="router.push('/')">先去首页</button>
+        </div>
       </div>
 
       <template v-else>
@@ -127,11 +131,15 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { activityApi, creditApi, userApi } from '@/api/platform'
+import { useAuthDialog } from '@/composables/useAuthDialog'
 import { useSession } from '@/composables/useSession'
 
+const router = useRouter()
 const { user } = useSession()
+const { openAuth } = useAuthDialog()
 
 const profile = ref(null)
 const overview = ref(null)

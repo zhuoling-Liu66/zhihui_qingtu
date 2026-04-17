@@ -4,6 +4,10 @@
       <div v-if="!user" class="card-surface empty-login">
         <h2>登录后查看我的队伍</h2>
         <p>这里可以创建队伍、查看自己带领或参与的队伍，并进入详情页处理审批。</p>
+        <div class="empty-login__actions">
+          <button type="button" class="login-entry-button" @click="openAuth">登录</button>
+          <button type="button" class="empty-login__secondary" @click="router.push('/')">先去首页</button>
+        </div>
       </div>
 
       <template v-else>
@@ -103,10 +107,12 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { activityApi, teamApi } from '@/api/platform'
+import { useAuthDialog } from '@/composables/useAuthDialog'
 import { useSession } from '@/composables/useSession'
 
 const router = useRouter()
 const { user } = useSession()
+const { openAuth } = useAuthDialog()
 
 const leaderTeams = ref([])
 const memberTeams = ref([])

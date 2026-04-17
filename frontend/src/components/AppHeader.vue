@@ -24,27 +24,11 @@
       </nav>
     </section>
 
-    <section class="sidebar-section sidebar-section--topics">
-      <p class="sidebar-section__title">热门专题</p>
-      <div class="sidebar-topic-list">
-        <button
-          v-for="item in topQuickLinks"
-          :key="item.slug"
-          type="button"
-          class="sidebar-topic"
-          @click="router.push({ name: 'section', params: { slug: item.slug } })"
-        >
-          {{ item.label }}
-        </button>
-      </div>
-    </section>
-
     <section class="sidebar-userbox">
       <template v-if="isLoggedIn">
         <div class="sidebar-userbox__meta">
           <span class="sidebar-userbox__eyebrow">当前账号</span>
           <strong>{{ user?.userName || user?.userId }}</strong>
-          <small>{{ roleText }}</small>
         </div>
         <div class="sidebar-userbox__actions">
           <router-link class="sidebar-userbox__button" to="/profile">个人中心</router-link>
@@ -52,13 +36,13 @@
             退出登录
           </button>
         </div>
-        <p class="sidebar-userbox__hint">学分审核已收进“我发布的活动”里的具体学分活动。</p>
+        <p class="sidebar-userbox__hint">学分审核入口：我发布的活动 -> 学分活动卡片</p>
       </template>
       <template v-else>
         <p class="sidebar-userbox__eyebrow">账号入口</p>
         <h4>登录后同步你的学分与推荐</h4>
         <p class="sidebar-userbox__hint">系统会结合兴趣标签、专业年级和参与历史给出更合适的活动。</p>
-        <el-button round color="#111827" @click="$emit('open-auth')">登录 / 注册</el-button>
+        <button type="button" class="login-entry-button" @click="openAuth">登录</button>
       </template>
     </section>
   </aside>
@@ -79,8 +63,8 @@
       </div>
 
       <div class="workspace-topbar__summary">
-        <span class="workspace-topbar__eyebrow">Campus Activity Hub</span>
-        <strong>把第二课堂、志愿服务、组队邀请和 AI 推荐放进同一条校园信息流。</strong>
+        <span class="workspace-topbar__eyebrow">2026 SPRING ISSUE</span>
+        <strong>校园活动簿</strong>
       </div>
     </div>
 
@@ -99,7 +83,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Calendar,
@@ -110,13 +94,13 @@ import {
   UserFilled,
 } from '@element-plus/icons-vue'
 import { topQuickLinks } from '@/constants/ui'
+import { useAuthDialog } from '@/composables/useAuthDialog'
 import { useSession } from '@/composables/useSession'
-
-defineEmits(['open-auth'])
 
 const route = useRoute()
 const router = useRouter()
 const { user, isLoggedIn, clearUser } = useSession()
+const { openAuth } = useAuthDialog()
 
 const workspaceLinks = [
   { label: '首页逛场', to: { name: 'home' }, icon: HomeFilled, names: ['home'] },
@@ -128,14 +112,6 @@ const workspaceLinks = [
 ]
 
 const searchText = ref(route.query.q || route.query.keyword || '')
-
-const roleText = computed(() => {
-  const role = Number(user.value?.userRole)
-  if (role === 3) return '管理员 / 老师'
-  if (role === 2) return '老师 / 发布者'
-  if (Number(user.value?.publisherStatus) === 1) return '学生 / 可发布活动'
-  return '学生用户'
-})
 
 watch(
   () => route.fullPath,

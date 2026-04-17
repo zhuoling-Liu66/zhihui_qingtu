@@ -4,6 +4,10 @@
       <div v-if="!user" class="card-surface empty-login">
         <h2>登录后查看我发布的活动</h2>
         <p>这里会集中展示你发布的活动，并提供编辑、删除、状态切换和签到开关设置。</p>
+        <div class="empty-login__actions">
+          <button type="button" class="login-entry-button" @click="openAuth">登录</button>
+          <button type="button" class="empty-login__secondary" @click="router.push('/')">先去首页</button>
+        </div>
       </div>
 
       <template v-else>
@@ -98,11 +102,13 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import CoverImage from '@/components/CoverImage.vue'
 import { activityApi } from '@/api/platform'
+import { useAuthDialog } from '@/composables/useAuthDialog'
 import { useSession } from '@/composables/useSession'
 import { formatActivityStatusByActivity, formatMetric } from '@/utils/format'
 
 const router = useRouter()
 const { user } = useSession()
+const { openAuth } = useAuthDialog()
 
 const activities = ref([])
 

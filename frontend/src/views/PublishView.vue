@@ -19,6 +19,10 @@
         <div v-if="!user" class="empty-login">
           <h3>登录后才能发布或编辑活动</h3>
           <p>请先完成登录，再回来管理校园活动。</p>
+          <div class="empty-login__actions">
+            <button type="button" class="login-entry-button" @click="openAuth">登录</button>
+            <button type="button" class="empty-login__secondary" @click="router.push('/')">先去逛逛</button>
+          </div>
         </div>
 
         <el-form v-else :model="form" label-position="top" class="publish-form">
@@ -155,11 +159,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CoverImage from '@/components/CoverImage.vue'
 import { activityApi } from '@/api/platform'
+import { useAuthDialog } from '@/composables/useAuthDialog'
 import { useSession } from '@/composables/useSession'
 
 const route = useRoute()
 const router = useRouter()
 const { user } = useSession()
+const { openAuth } = useAuthDialog()
 
 const tags = ref([])
 const submitting = ref(false)
