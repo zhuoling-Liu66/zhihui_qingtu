@@ -49,40 +49,81 @@
         <el-button text @click="loadRecommendations">刷新推荐</el-button>
       </div>
 
+      <div class="recommend-grid">
+        <article class="recommend-card recommend-card--ai">
+          <p class="section-head__kicker">AI 推荐</p>
+          <h3>{{ recommendationTitle }}</h3>
+          <p class="recommend-card__summary">{{ recommendationSummary }}</p>
+
+          <ul v-if="recommendPreviewActivities.length" class="recommend-card__list">
+            <li
+              v-for="activity in recommendPreviewActivities"
+              :key="activity.activityId"
+              class="recommend-card__list-item"
+              @click="goActivityDetail(activity.activityId)"
+            >
+              <span class="recommend-card__list-title">{{ activity.activityTitle }}</span>
+              <span class="recommend-card__list-meta">
+                {{ activity.tags?.[0]?.tagName || '校园活动' }}
+              </span>
+            </li>
+          </ul>
+          <div v-else class="recommend-card__placeholder">
+            登录后系统会结合兴趣标签、专业年级和参与历史，生成更贴近你的活动推荐。
+          </div>
+
+          <div v-if="visibleRecommendReasons.length" class="recommend-card__chips">
+            <span v-for="tag in visibleRecommendReasons" :key="tag">{{ tag }}</span>
+          </div>
+        </article>
+
+        <article class="recommend-card recommend-card--credit" @click="jumpToSection('second-class')">
+          <p class="section-head__kicker">学分专题</p>
+          <h3>第二课堂、德育、体育可直达专题页</h3>
+          <p class="recommend-card__summary">按成长方向和学分缺口继续筛选，不必在活动流里来回翻找。</p>
+          <div class="recommend-card__chips">
+            <span v-for="entry in creditTopics" :key="entry.slug" @click.stop="jumpToSection(entry.slug)">
+              {{ entry.label }}
+            </span>
+          </div>
+        </article>
+
+        <article class="recommend-card recommend-card--team" @click="jumpToSection('team')">
+          <p class="section-head__kicker">校园招募</p>
+          <h3>{{ teamCards.length }} 个正在招募的校园队伍</h3>
+          <p class="recommend-card__summary">球搭子、兴趣小队、校园团建都可以从这里继续进入。</p>
+
+          <ul v-if="teamPreviewCards.length" class="recommend-card__list recommend-card__list--compact">
+            <li
+              v-for="team in teamPreviewCards"
+              :key="team.teamId"
+              class="recommend-card__list-item"
+              @click.stop="goTeamDetail(team.teamId)"
+            >
+              <span class="recommend-card__list-title">{{ team.teamName }}</span>
+              <span class="recommend-card__list-meta">
+                {{ team.currentSize }}/{{ team.maxSize || '不限' }} 人
+              </span>
+            </li>
+          </ul>
+          <div v-else class="recommend-card__placeholder">
+            组队广场暂时没有新的招募信息，稍后可以刷新首页继续查看。
+          </div>
+        </article>
+      </div>
+
       <div class="topic-tabs">
         <button
           v-for="entry in homeTopicEntries"
           :key="entry.label"
           class="topic-tab"
+          :class="{ 'topic-tab--active': activeTopicKey === entry.label }"
           type="button"
           @click="jumpTopic(entry)"
         >
-          <span>{{ entry.icon }}</span>
-          {{ entry.label }}
+          <span class="topic-tab__symbol">{{ entry.icon }}</span>
+          <span class="topic-tab__label">{{ entry.label }}</span>
         </button>
-      </div>
-
-      <div class="recommend-grid">
-        <article class="recommend-card recommend-card--ai">
-          <p class="section-head__kicker">AI 推荐</p>
-          <h3>{{ recommendationTitle }}</h3>
-          <p>{{ recommendationSummary }}</p>
-          <div class="recommend-card__chips">
-            <span v-for="tag in visibleRecommendReasons" :key="tag">{{ tag }}</span>
-          </div>
-        </article>
-
-        <article class="recommend-card recommend-card--credit">
-          <p class="section-head__kicker">学分专区</p>
-          <h3>第二课堂、德育、体育可直达专题页</h3>
-          <p>点击顶部标签或左侧悬浮入口，都能进入对应的专门界面。</p>
-        </article>
-
-        <article class="recommend-card recommend-card--team">
-          <p class="section-head__kicker">组队邀请</p>
-          <h3>{{ teamCards.length }} 个正在招募的校园队伍</h3>
-          <p>球搭子、兴趣小队、校园团建，首页右侧就能看到。</p>
-        </article>
       </div>
     </section>
 
@@ -176,6 +217,7 @@ const tags = ref([])
 const teamCards = ref([])
 const recommendIds = ref([])
 const recommendReasons = ref({})
+const activeTopicKey = ref(homeTopicEntries[0]?.label || '')
 
 const featuredActivities = computed(() =>
   activities.value.filter((item) => [1, 2, 3].includes(item.activityStatus)).slice(0, 9),
@@ -194,6 +236,12 @@ const visibleRecommendReasons = computed(() =>
     .slice(0, 4),
 )
 
+const recommendPreviewActivities = computed(() => recommendedActivities.value.slice(0, 3))
+const teamPreviewCards = computed(() => teamCards.value.slice(0, 3))
+const creditTopics = computed(() =>
+  homeTopicEntries.filter((entry) => ['second-class', 'moral', 'physical'].includes(entry.slug)),
+)
+
 const recommendationTitle = computed(() => {
   if (recommendedActivities.value.length) {
     return 'AI 正在根据你的画像推送更合适的校园活动'
@@ -209,6 +257,7 @@ const recommendationSummary = computed(() => {
 })
 
 const jumpTopic = (entry) => {
+  activeTopicKey.value = entry.label
   if (entry.type === 'home') {
     router.push({ name: 'home' })
     return
@@ -222,6 +271,18 @@ const jumpFeature = (slug) => {
     return
   }
   router.push({ name: 'section', params: { slug } })
+}
+
+const jumpToSection = (slug) => {
+  router.push({ name: 'section', params: { slug } })
+}
+
+const goActivityDetail = (activityId) => {
+  router.push({ name: 'activity-detail', params: { id: activityId } })
+}
+
+const goTeamDetail = (teamId) => {
+  router.push({ name: 'team-detail', params: { id: teamId } })
 }
 
 const loadHomeData = async () => {
