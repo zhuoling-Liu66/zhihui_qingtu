@@ -10,18 +10,32 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 启动时补齐默认活动标签，避免老库缺少基础标签数据。
+ * 活动标签初始化器。
+ * <p>
+ * 应用启动完成后会自动执行一次，用于给新数据库补充一批基础活动标签。
+ * 这样前端在发布活动或设置兴趣标签时，至少有一套默认标签可选。
  */
 @Component
+// 被 Spring 扫描后，这个类会在项目启动时自动参与执行。
 @RequiredArgsConstructor
+// Lombok 自动为 final 字段生成构造器，便于注入 repository。
 public class ActivityTagDataInitializer implements CommandLineRunner {
 
+    /**
+     * 标签表的数据访问接口。
+     */
     private final ActivityTagRepository activityTagRepository;
 
+    /**
+     * Spring Boot 启动完成后自动回调的方法。
+     *
+     * @param args 启动参数
+     */
     @Override
     public void run(String... args) {
         Long count = activityTagRepository.selectCount(new LambdaQueryWrapper<ActivityTag>());
         if (count != null && count > 0) {
+            // 只在“标签表为空”时插入默认标签，避免重复初始化。
             return;
         }
 

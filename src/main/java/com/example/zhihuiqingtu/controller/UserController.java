@@ -19,17 +19,25 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 用户域接口控制器。
+ * 用户模块控制器。
+ * <p>
+ * 负责用户资料、兴趣标签、活动历史和学分总览等接口。
  */
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
 public class UserController {
 
+    /**
+     * 用户业务服务。
+     */
     private final UserService userService;
 
     /**
      * 查询用户资料。
+     *
+     * @param userId 用户学号/工号
+     * @return 用户资料
      */
     @GetMapping("/{userId}")
     public ApiResponse<UserProfileResponse> getUserProfile(@PathVariable String userId) {
@@ -38,6 +46,10 @@ public class UserController {
 
     /**
      * 更新用户资料。
+     *
+     * @param userId  用户学号/工号
+     * @param request 更新资料请求体
+     * @return 更新后的用户资料
      */
     @PutMapping("/{userId}")
     public ApiResponse<UserProfileResponse> updateUserProfile(
@@ -48,6 +60,10 @@ public class UserController {
 
     /**
      * 更新用户兴趣标签。
+     *
+     * @param userId  用户学号/工号
+     * @param request 兴趣标签更新请求体
+     * @return 更新后的用户资料
      */
     @PutMapping("/{userId}/interest-tags")
     public ApiResponse<UserProfileResponse> updateInterestTags(
@@ -58,6 +74,9 @@ public class UserController {
 
     /**
      * 查询用户活动历史。
+     *
+     * @param userId 用户学号/工号
+     * @return 活动历史列表
      */
     @GetMapping("/{userId}/histories")
     public ApiResponse<List<UserActivityHistoryVO>> getActivityHistories(@PathVariable String userId) {
@@ -66,6 +85,9 @@ public class UserController {
 
     /**
      * 查询用户学分总览。
+     *
+     * @param userId 用户学号/工号
+     * @return 学分总览
      */
     @GetMapping("/{userId}/credit-overview")
     public ApiResponse<UserCreditOverviewResponse> getCreditOverview(@PathVariable String userId) {

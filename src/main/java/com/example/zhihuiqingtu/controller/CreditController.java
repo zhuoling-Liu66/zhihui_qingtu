@@ -19,17 +19,25 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 学分域接口控制器。
+ * 学分模块控制器。
+ * <p>
+ * 负责学分记录查询、审核和统计相关接口。
  */
 @RestController
 @RequestMapping("/api/credits")
 @RequiredArgsConstructor
 public class CreditController {
 
+    /**
+     * 学分业务服务。
+     */
     private final CreditService creditService;
 
     /**
-     * 查询学分记录列表。
+     * 分页查询学分记录。
+     *
+     * @param request 查询条件
+     * @return 学分记录分页结果
      */
     @GetMapping
     public ApiResponse<PageResponse<CreditRecordResponse>> queryCredits(@ModelAttribute CreditQueryRequest request) {
@@ -37,7 +45,11 @@ public class CreditController {
     }
 
     /**
-     * 审核学分记录。
+     * 审核某一条学分记录。
+     *
+     * @param recordId 学分记录主键
+     * @param request  审核请求体
+     * @return 审核后的记录详情
      */
     @PatchMapping("/{recordId}/review")
     public ApiResponse<CreditRecordResponse> reviewCredit(
@@ -47,7 +59,10 @@ public class CreditController {
     }
 
     /**
-     * 查询用户学分统计。
+     * 查询某个用户的学分统计信息。
+     *
+     * @param userId 用户学号/工号
+     * @return 学分统计结果
      */
     @GetMapping("/statistics")
     public ApiResponse<CreditStatisticsResponse> getStatistics(@RequestParam String userId) {

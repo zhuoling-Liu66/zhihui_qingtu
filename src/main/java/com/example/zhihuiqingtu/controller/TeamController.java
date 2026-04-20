@@ -22,17 +22,25 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 组队域接口控制器。
+ * 组队模块控制器。
+ * <p>
+ * 负责队伍创建、申请加入、审核成员、退出队伍和解散队伍等操作。
  */
 @RestController
 @RequestMapping("/api/teams")
 @RequiredArgsConstructor
 public class TeamController {
 
+    /**
+     * 组队业务服务。
+     */
     private final TeamService teamService;
 
     /**
      * 创建队伍。
+     *
+     * @param request 创建队伍请求体
+     * @return 创建后的队伍详情
      */
     @PostMapping
     public ApiResponse<TeamResponse> createTeam(@Valid @RequestBody CreateTeamRequest request) {
@@ -40,7 +48,10 @@ public class TeamController {
     }
 
     /**
-     * 查询队伍列表。
+     * 分页查询队伍列表。
+     *
+     * @param request 查询条件
+     * @return 队伍分页结果
      */
     @GetMapping
     public ApiResponse<PageResponse<TeamResponse>> queryTeams(@ModelAttribute TeamQueryRequest request) {
@@ -49,6 +60,9 @@ public class TeamController {
 
     /**
      * 查询队伍详情。
+     *
+     * @param teamId 队伍主键
+     * @return 队伍详情
      */
     @GetMapping("/{teamId}")
     public ApiResponse<TeamResponse> getTeamDetail(@PathVariable Long teamId) {
@@ -57,6 +71,10 @@ public class TeamController {
 
     /**
      * 申请加入队伍。
+     *
+     * @param teamId  队伍主键
+     * @param request 入队申请参数
+     * @return 最新队伍详情
      */
     @PostMapping("/{teamId}/join")
     public ApiResponse<TeamResponse> applyJoin(
@@ -67,6 +85,11 @@ public class TeamController {
 
     /**
      * 审核队员申请。
+     *
+     * @param teamId   队伍主键
+     * @param memberId 队员记录主键
+     * @param request  审核请求体
+     * @return 最新队伍详情
      */
     @PatchMapping("/{teamId}/members/{memberId}/review")
     public ApiResponse<TeamResponse> reviewMember(
@@ -78,6 +101,11 @@ public class TeamController {
 
     /**
      * 队员退出队伍。
+     *
+     * @param teamId   队伍主键
+     * @param memberId 队员记录主键
+     * @param request  退出请求体
+     * @return 最新队伍详情
      */
     @PatchMapping("/{teamId}/members/{memberId}/exit")
     public ApiResponse<TeamResponse> exitTeam(
@@ -89,6 +117,10 @@ public class TeamController {
 
     /**
      * 解散队伍。
+     *
+     * @param teamId  队伍主键
+     * @param request 解散请求体
+     * @return 最新队伍详情
      */
     @PatchMapping("/{teamId}/dismiss")
     public ApiResponse<TeamResponse> dismissTeam(

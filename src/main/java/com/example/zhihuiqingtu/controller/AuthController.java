@@ -14,20 +14,25 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 认证接口控制器。
+ * 认证模块控制器。
+ * <p>
+ * 负责注册、登录等与“身份认证”相关的接口。
  */
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
+    /**
+     * 认证业务服务。
+     */
     private final AuthService authService;
 
     /**
      * 用户注册接口。
      *
-     * @param request 注册请求
-     * @return 注册后的用户信息
+     * @param request 注册请求体
+     * @return 注册完成后的用户资料
      */
     @PostMapping("/register")
     public ApiResponse<UserProfileResponse> register(@Valid @RequestBody RegisterRequest request) {
@@ -37,7 +42,7 @@ public class AuthController {
     /**
      * 用户登录接口。
      *
-     * @param request 登录请求
+     * @param request 登录请求体
      * @return 登录结果
      */
     @PostMapping("/login")

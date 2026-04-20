@@ -29,17 +29,26 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 /**
- * 活动域接口控制器。
+ * 活动模块控制器。
+ * <p>
+ * 这一层负责“接收前端请求”和“把请求转交给 Service”。
+ * 它自己通常不写复杂业务逻辑，而是做参数接收、接口映射和结果返回。
  */
 @RestController
 @RequestMapping("/api/activities")
 @RequiredArgsConstructor
 public class ActivityController {
 
+    /**
+     * 活动业务服务。
+     */
     private final ActivityService activityService;
 
     /**
      * 上传活动封面。
+     *
+     * @param file 前端上传的图片文件
+     * @return 封面访问地址
      */
     @PostMapping("/covers")
     public ApiResponse<ActivityCoverUploadResponse> uploadActivityCover(@RequestParam("file") MultipartFile file) {
@@ -48,6 +57,9 @@ public class ActivityController {
 
     /**
      * 创建活动。
+     *
+     * @param request 创建活动请求体
+     * @return 创建后的活动详情
      */
     @PostMapping
     public ApiResponse<ActivityResponse> createActivity(@Valid @RequestBody CreateActivityRequest request) {
@@ -55,7 +67,11 @@ public class ActivityController {
     }
 
     /**
-     * 更新活动。
+     * 更新活动信息。
+     *
+     * @param activityId 活动主键
+     * @param request    更新请求体
+     * @return 更新后的活动详情
      */
     @PutMapping("/{activityId}")
     public ApiResponse<ActivityResponse> updateActivity(
@@ -66,6 +82,10 @@ public class ActivityController {
 
     /**
      * 修改活动状态。
+     *
+     * @param activityId 活动主键
+     * @param request    状态变更请求体
+     * @return 修改后的活动详情
      */
     @PatchMapping("/{activityId}/status")
     public ApiResponse<ActivityResponse> changeActivityStatus(
@@ -75,7 +95,11 @@ public class ActivityController {
     }
 
     /**
-     * 修改签到开关。
+     * 开启或关闭签到开关。
+     *
+     * @param activityId 活动主键
+     * @param request    签到开关请求体
+     * @return 修改后的活动详情
      */
     @PatchMapping("/{activityId}/sign-in-switch")
     public ApiResponse<ActivityResponse> updateSignInSwitch(
@@ -86,6 +110,10 @@ public class ActivityController {
 
     /**
      * 删除活动。
+     *
+     * @param activityId      活动主键
+     * @param operatorUserId  执行删除的用户学号/工号
+     * @return 空响应体
      */
     @DeleteMapping("/{activityId}")
     public ApiResponse<Void> deleteActivity(
@@ -96,7 +124,10 @@ public class ActivityController {
     }
 
     /**
-     * 分页查询活动列表。
+     * 按条件分页查询活动列表。
+     *
+     * @param request 查询条件
+     * @return 分页活动列表
      */
     @GetMapping
     public ApiResponse<PageResponse<ActivityResponse>> queryActivities(@ModelAttribute ActivityQueryRequest request) {
@@ -105,6 +136,9 @@ public class ActivityController {
 
     /**
      * 查询活动详情。
+     *
+     * @param activityId 活动主键
+     * @return 活动详情
      */
     @GetMapping("/{activityId}")
     public ApiResponse<ActivityResponse> getActivityDetail(@PathVariable Long activityId) {
@@ -112,7 +146,9 @@ public class ActivityController {
     }
 
     /**
-     * 查询全部可用活动标签。
+     * 查询所有可选活动标签。
+     *
+     * @return 标签列表
      */
     @GetMapping("/tags")
     public ApiResponse<List<ActivityTagVO>> listActivityTags() {
