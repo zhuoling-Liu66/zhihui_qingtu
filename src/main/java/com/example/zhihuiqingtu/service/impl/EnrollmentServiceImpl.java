@@ -22,6 +22,7 @@ import com.example.zhihuiqingtu.repository.UserInfoRepository;
 import com.example.zhihuiqingtu.service.EnrollmentService;
 import com.example.zhihuiqingtu.vo.enrollment.EnrollmentResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -39,6 +40,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     private final ActivityMainRepository activityMainRepository;
     private final UserInfoRepository userInfoRepository;
     private final CreditRecordRepository creditRecordRepository;
+    /** Redis 名额闸门：把并发挡在数据库外面（性能），不负责正确性（正确性由条件 UPDATE 保证）。 */
+    private final ActivityStockService activityStockService;
+    /** 报名会改 current_participant，而它是活动详情的一个字段，所以必须让详情缓存失效。 */
+    private final ActivityCacheService activityCacheService;
+    /** 热门活动榜（Redis ZSet）。 */
+    private final HotActivityService hotActivityService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -51,15 +58,44 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         if (ActivityStatusEnum.FINISHED.getCode().equals(resolveDisplayStatus(activityMain))) {
             throw new BusinessException(4202, "已结束活动不可报名");
         }
-        if (activityMain.getMaxParticipant() != null
-                && activityMain.getMaxParticipant() > 0
-                && activityMain.getCurrentParticipant() >= activityMain.getMaxParticipant()) {
-            throw new BusinessException(4203, "活动报名人数已满");
-        }
         if (activityEnrollRepository.selectCount(new LambdaQueryWrapper<ActivityEnroll>()
                 .eq(ActivityEnroll::getUserId, request.getUserId())
                 .eq(ActivityEnroll::getActivityId, request.getActivityId())) > 0) {
             throw new BusinessException(4204, "请勿重复报名");
+        }
+
+        // ★ 关键顺序：先原子占用名额（拿到 activity_main 该行的 X 锁），再 INSERT 报名记录。
+        //
+        // 这个顺序同时修掉了两个并发问题（推导见 ActivityMainRepository#tryOccupySeat 的注释）：
+        //   ① 超卖：原来的 "SELECT 判断 → Java 里 +1 → updateById" 是快照读 + check-then-act，
+        //      两个并发请求会都读到旧值、都判定"没满"。现在判断被压进 UPDATE 的 WHERE，
+        //      是当前读，后到的事务拿到锁后会重新求值 → 影响行数 0 → 正确拒绝。
+        //   ② 死锁：activity_enroll 有外键指向 activity_main，INSERT 子表时 InnoDB 会在父表
+        //      该行加 S 锁。先 INSERT 会导致两个事务各持 S 锁、再互相等对方释放以拿 X 锁，
+        //      形成循环等待。先 UPDATE 则一开始就独占 X 锁，后来者只能在锁上排队，不会死锁。
+        //
+        // 注意：这里**不能**再用 activityMain.setCurrentParticipant(...) + updateById，
+        // 那个写法除了上述两个问题，还会把实体所有字段写回，造成丢失更新（覆盖别人改的标题等）。
+
+        boolean limited = activityStockService.isLimited(activityMain);
+
+        // ── 第 1 层：Redis 前置闸门（性能，可选的加速器）──
+        // 限流人数的活动才需要；不限人数时 isLimited 为 false，直接跳过，避免误扣一个不存在的 key。
+        // Redis 判定"满了"就直接返回，请求根本不会碰到 MySQL 的行锁 —— 这才是它挡掉的那部分压力。
+        if (limited && !activityStockService.tryDeduct(request.getActivityId())) {
+            throw new BusinessException(4203, "活动报名人数已满");
+        }
+
+        // ── 第 2 层：DB 原子扣减（正确性，真正的防线）──
+        int occupied = activityMainRepository.tryOccupySeat(request.getActivityId());
+        if (occupied == 0) {
+            // Redis 放行了但数据库说没名额：说明两者出现了短暂不一致（key 过期、Redis 重启、
+            // 或并发下别的请求已经占掉）。此时必须【回补】刚预扣的那一个，否则这个名额被白扣，
+            // 表现为"活动明明有空位却一直报人数已满"。
+            if (limited) {
+                activityStockService.rollback(request.getActivityId());
+            }
+            throw new BusinessException(4203, "活动报名人数已满");
         }
 
         ActivityEnroll enrollment = ActivityEnroll.builder()
@@ -67,11 +103,31 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .activityId(request.getActivityId())
                 .enrollStatus(EnrollmentStatusEnum.ENROLLED.getCode())
                 .build();
-        activityEnrollRepository.insert(enrollment);
+        try {
+            activityEnrollRepository.insert(enrollment);
+        } catch (DuplicateKeyException exception) {
+            // 唯一索引 uk_activity_enroll_user (user_id, activity_id, delete_flag) 兜底。
+            // 上面的 selectCount 检查有并发窗口，真正拦住重复报名的是这个索引。
+            // 不转换的话它会一路冒泡到 GlobalExceptionHandler 的兜底分支，变成 5000 + 一长串 SQL 报错。
+            //
+            // 这里【要】手工回补 Redis：Spring 的 @Transactional 会自动回滚那条 UPDATE，
+            // 但 Redis 不是事务资源，事务管理器管不到它。少了这一句就会出现"名额被白扣"，
+            // 表现为活动明明还有空位却一直提示人数已满。
+            if (limited) {
+                activityStockService.rollback(request.getActivityId());
+            }
+            throw new BusinessException(4204, "请勿重复报名");
+        }
 
-        activityMain.setCurrentParticipant(activityMain.getCurrentParticipant() + 1);
-        activityMainRepository.updateById(activityMain);
-        return toEnrollmentResponse(enrollment, activityMain);
+        // 报名成功 → 三处缓存/统计要跟着动：
+        //   1. 活动详情里的 currentParticipant 变了，详情缓存必须失效；
+        //   2. 热门榜分数 +1；
+        //   3. 库存 key 不用管，上面 tryDeduct 已经扣过了。
+        activityCacheService.evict(request.getActivityId());
+        hotActivityService.incrementEnroll(request.getActivityId());
+
+        // 重新查一次，让返回体里的 currentParticipant 是占位后的真实值
+        return toEnrollmentResponse(enrollment, activityMainRepository.selectById(request.getActivityId()));
     }
 
     @Override
@@ -91,8 +147,19 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             throw new BusinessException(4207, "已结束活动不能退出");
         }
 
+        // 同样用原子 SQL，而不是 "读出来 -1 再 updateById"（那是同一个 check-then-act 陷阱，
+        // 并发退出时会少减，且 updateById 会把整行实体字段覆盖回去）。
         activityEnrollRepository.deleteById(enrollId);
-        rollbackActivityCount(enrollment.getActivityId());
+        activityMainRepository.releaseSeat(enrollment.getActivityId());
+
+        // 数据库名额已释放，Redis 闸门也要同步还回去，否则名额会越用越少（Redis 说满了、数据库其实有空位）。
+        if (activityStockService.isLimited(activityMain)) {
+            activityStockService.rollback(enrollment.getActivityId());
+        }
+        // current_participant 变了 → 详情缓存失效；热门榜分数 -1
+        activityCacheService.evict(enrollment.getActivityId());
+        hotActivityService.decrementEnroll(enrollment.getActivityId());
+
         return toEnrollmentResponse(enrollment, activityMain);
     }
 
@@ -177,13 +244,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .verifyStatus(ReviewStatusEnum.PENDING.getCode())
                 .build();
         creditRecordRepository.insert(creditRecord);
-    }
-
-    private void rollbackActivityCount(Long activityId) {
-        ActivityMain activityMain = requireActivity(activityId);
-        int currentCount = activityMain.getCurrentParticipant() == null ? 0 : activityMain.getCurrentParticipant();
-        activityMain.setCurrentParticipant(Math.max(0, currentCount - 1));
-        activityMainRepository.updateById(activityMain);
     }
 
     private EnrollmentResponse toEnrollmentResponse(ActivityEnroll enrollment) {

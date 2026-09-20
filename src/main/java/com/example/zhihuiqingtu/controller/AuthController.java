@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -48,5 +49,22 @@ public class AuthController {
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.success("登录成功", authService.login(request));
+    }
+
+    /**
+     * 用户登出接口。
+     * <p>
+     * 把当前请求头里的令牌写入 Redis 黑名单，key 的 TTL = 令牌剩余有效期。
+     * <p>
+     * 该接口本身也走 {@code TokenInterceptor}，所以能进来就说明令牌一定合法（签名有效且未过期），
+     * 这里不需要重复校验。
+     *
+     * @param token 请求头里的令牌
+     * @return 空响应体
+     */
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(@RequestHeader("token") String token) {
+        authService.logout(token);
+        return ApiResponse.success("登出成功", null);
     }
 }

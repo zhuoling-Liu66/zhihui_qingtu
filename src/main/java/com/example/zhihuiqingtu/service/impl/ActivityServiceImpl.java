@@ -14,7 +14,6 @@ import com.example.zhihuiqingtu.entity.ActivityEnroll;
 import com.example.zhihuiqingtu.entity.ActivityTag;
 import com.example.zhihuiqingtu.entity.ActivityTagRel;
 import com.example.zhihuiqingtu.entity.CreditRecord;
-import com.example.zhihuiqingtu.entity.RecommendLog;
 import com.example.zhihuiqingtu.entity.TeamMain;
 import com.example.zhihuiqingtu.entity.UserInfo;
 import com.example.zhihuiqingtu.enums.ActivityStatusEnum;
@@ -27,13 +26,13 @@ import com.example.zhihuiqingtu.repository.ActivityEnrollRepository;
 import com.example.zhihuiqingtu.repository.ActivityTagRelRepository;
 import com.example.zhihuiqingtu.repository.ActivityTagRepository;
 import com.example.zhihuiqingtu.repository.CreditRecordRepository;
-import com.example.zhihuiqingtu.repository.RecommendLogRepository;
 import com.example.zhihuiqingtu.repository.TeamMainRepository;
 import com.example.zhihuiqingtu.repository.TeamMemberRepository;
 import com.example.zhihuiqingtu.repository.UserInfoRepository;
 import com.example.zhihuiqingtu.service.ActivityService;
 import com.example.zhihuiqingtu.vo.activity.ActivityCoverUploadResponse;
 import com.example.zhihuiqingtu.vo.activity.ActivityResponse;
+import com.example.zhihuiqingtu.vo.activity.ActivityStockResponse;
 import com.example.zhihuiqingtu.vo.activity.ActivityTagVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -73,11 +72,16 @@ public class ActivityServiceImpl implements ActivityService {
     private final ActivityTagRepository activityTagRepository;
     private final ActivityTagRelRepository activityTagRelRepository;
     private final CreditRecordRepository creditRecordRepository;
-    private final RecommendLogRepository recommendLogRepository;
     private final TeamMainRepository teamMainRepository;
     private final TeamMemberRepository teamMemberRepository;
     private final UserInfoRepository userInfoRepository;
     private final UploadProperties uploadProperties;
+    /** 活动详情缓存（Redis）。所有写路径结束后都要让它失效。 */
+    private final ActivityCacheService activityCacheService;
+    /** 活动名额库存闸门（Redis）。活动变更后要按数据库权威值重置。 */
+    private final ActivityStockService activityStockService;
+    /** 热门活动榜（Redis ZSet）。 */
+    private final HotActivityService hotActivityService;
 
     @Override
     public ActivityCoverUploadResponse uploadActivityCover(MultipartFile file) {
@@ -146,6 +150,10 @@ public class ActivityServiceImpl implements ActivityService {
                 .build();
         activityMainRepository.insert(activityMain);
         syncActivityTags(activityMain.getActivityId(), request.getTagIds());
+        // 初始化 Redis 库存（此时 currentParticipant=0，remaining 就是 maxParticipant）。
+        // 不做这一步也没关系 —— tryDeduct 遇到 key 不存在会回源加载，只是第一次报名会多一次查询。
+        activityStockService.reset(activityMain.getActivityId(), activityMain.getMaxParticipant(), 0);
+        // 新建的活动不可能已经在缓存里，所以这里【不需要】evict，这是梳理写路径时容易多写的一步。
         return getActivityDetail(activityMain.getActivityId());
     }
 
@@ -181,6 +189,13 @@ public class ActivityServiceImpl implements ActivityService {
         activityMain.setMaxParticipant(request.getMaxParticipant());
         activityMainRepository.updateById(activityMain);
         syncActivityTags(activityId, request.getTagIds());
+        // 最大人数可能被改小/改大，按数据库权威值重算 Redis 库存。
+        // 注意上面 4101 那条校验（最大人数不能小于当前报名人数）必须先过，否则会算出负库存。
+        activityStockService.reset(activityId, activityMain.getMaxParticipant(), activityMain.getCurrentParticipant());
+        // ★ 必须在下面 getActivityDetail 之前删缓存。
+        // 因为 getActivityDetail 现在走 Cache-Aside 读路径：不先删，它会把【旧的】缓存原样返回，
+        // 于是"改了活动但接口返回的还是老数据"（而且数据库已经改了，只有返回值是旧的，非常难排查）。
+        activityCacheService.evict(activityId);
         return getActivityDetail(activityId);
     }
 
@@ -196,6 +211,8 @@ public class ActivityServiceImpl implements ActivityService {
         }
         activityMain.setActivityStatus(request.getActivityStatus());
         activityMainRepository.updateById(activityMain);
+        // 活动状态变了 → 缓存里的 displayStatus / activityStatus 已过期，必须删缓存
+        activityCacheService.evict(activityId);
         return getActivityDetail(activityId);
     }
 
@@ -220,6 +237,10 @@ public class ActivityServiceImpl implements ActivityService {
 
         activityMain.setSignInEnabled(request.getSignInEnabled());
         activityMainRepository.updateById(activityMain);
+        // sign_in_enabled 是 ActivityResponse 的一个字段，缓存必须失效 ——
+        // 否则"刚开启签到但学生点签到仍提示未开放"（EnrollmentServiceImpl 里签到读的是库，不是缓存，
+        // 但前端拿到的详情是缓存，会显示错误的按钮状态）。
+        activityCacheService.evict(activityId);
         return getActivityDetail(activityId);
     }
 
@@ -236,8 +257,6 @@ public class ActivityServiceImpl implements ActivityService {
                 .eq(ActivityEnroll::getActivityId, activityId));
         creditRecordRepository.delete(new LambdaQueryWrapper<CreditRecord>()
                 .eq(CreditRecord::getActivityId, activityId));
-        recommendLogRepository.delete(new LambdaQueryWrapper<RecommendLog>()
-                .eq(RecommendLog::getActivityId, activityId));
 
         List<TeamMain> teams = teamMainRepository.selectList(new LambdaQueryWrapper<TeamMain>()
                 .eq(TeamMain::getActivityId, activityId));
@@ -249,6 +268,11 @@ public class ActivityServiceImpl implements ActivityService {
                     .in(TeamMain::getTeamId, teamIds));
         }
         activityMainRepository.deleteById(activityId);
+        // 级联删除结束后清掉两个 Redis key：
+        //   - 详情缓存：不删的话，已删除的活动在 TTL 内还能被查到（前端会看到"删除没生效"）
+        //   - 库存 key：不删的话会留下一个永远没人清理的无主 key
+        activityCacheService.evict(activityId);
+        activityStockService.evict(activityId);
     }
 
     @Override
@@ -281,7 +305,34 @@ public class ActivityServiceImpl implements ActivityService {
 
     @Override
     public ActivityResponse getActivityDetail(Long activityId) {
-        return toActivityResponse(requireActivity(activityId));
+        // Cache-Aside 读路径：
+        //   1. 先查 Redis，命中直接返回（连 toActivityResponse 里那两条标签查询的 SQL 都省了）；
+        //   2. 命中"活动不存在"的空值标记 → 直接抛 4100，不去查库（防缓存穿透）；
+        //   3. 都未命中才查库，查完写回缓存。
+        ActivityResponse cached = activityCacheService.get(activityId);
+        if (cached != null) {
+            // 缓存里存的是"事实"（activityStatus + endTime），但对象里那个 displayStatus 字段
+            // 是写入时算好并一起被序列化进 JSON 的 —— 取回来时它已经被冻住了。
+            // 所以命中缓存后必须按 endTime 重算一次，否则活动结束后页面还会显示"进行中"。
+            // 这就是"缓存事实、不缓存结论"这条原则在代码上的落地方式。
+            cached.setDisplayStatus(ActivityStatusEnum.resolveDisplayStatus(
+                    cached.getActivityStatus(), cached.getEndTime()));
+            return cached;
+        }
+        if (activityCacheService.isKnownMissing(activityId)) {
+            throw new BusinessException(4100, "活动不存在");
+        }
+
+        ActivityMain activityMain = activityMainRepository.selectById(activityId);
+        if (activityMain == null) {
+            // 缓存一个短 TTL 的空值标记，挡住"反复请求不存在 ID"这类穿透流量
+            activityCacheService.putMissing(activityId);
+            throw new BusinessException(4100, "活动不存在");
+        }
+
+        ActivityResponse response = toActivityResponse(activityMain);
+        activityCacheService.put(response);
+        return response;
     }
 
     @Override
@@ -294,6 +345,59 @@ public class ActivityServiceImpl implements ActivityService {
                         .tagName(tag.getTagName())
                         .build())
                 .toList();
+    }
+
+    @Override
+    public List<ActivityResponse> listHotActivities(int limit) {
+        List<Long> activityIds = hotActivityService.listHotActivityIds(limit);
+        if (activityIds.isEmpty()) {
+            // 榜单还没数据是正常状态，返回空数组而不是报错
+            return List.of();
+        }
+
+        // ★ 必须批量查，不能 for 循环里逐个 selectById —— 那是典型的 N+1 查询：
+        //   榜单 10 条就是 10 次数据库往返，而 selectBatchIds 只发 1 条 IN (...) SQL。
+        //
+        // selectBatchIds 会自动带上逻辑删除条件（delete_flag = 0），
+        // 所以已删除的活动不会被查出来，天然满足"回表后活动已被删除就跳过"的要求。
+        List<ActivityMain> activities = activityMainRepository.selectBatchIds(activityIds);
+        if (activities.isEmpty()) {
+            return List.of();
+        }
+
+        // selectBatchIds 返回的顺序不保证与入参一致（取决于数据库），
+        // 而榜单的顺序本身就是信息（热度排名），所以这里按榜单顺序重新排列。
+        Map<Long, ActivityMain> byId = activities.stream()
+                .collect(Collectors.toMap(ActivityMain::getActivityId, Function.identity()));
+        List<ActivityResponse> result = new ArrayList<>();
+        for (Long activityId : activityIds) {
+            ActivityMain activityMain = byId.get(activityId);
+            if (activityMain == null) {
+                // 榜单里残留了已删除/不存在的活动：跳过它，不要让整个接口失败
+                hotActivityService.remove(activityId);
+                continue;
+            }
+            result.add(toActivityResponse(activityMain));
+        }
+        return result;
+    }
+
+    @Override
+    public ActivityStockResponse getActivityStock(Long activityId) {
+        ActivityMain activityMain = requireActivity(activityId);
+        Integer maxParticipant = activityMain.getMaxParticipant();
+        int current = activityMain.getCurrentParticipant() == null ? 0 : activityMain.getCurrentParticipant();
+
+        boolean limited = maxParticipant != null && maxParticipant > 0;
+        return ActivityStockResponse.builder()
+                .activityId(activityId)
+                .maxParticipant(maxParticipant)
+                .currentParticipant(current)
+                // 注意：这里从数据库现算，不从 Redis 读。Redis 里的值是"闸门"，
+                // 可能因为回补失败与真实值有短暂偏差；展示给用户的必须是权威值。
+                .remaining(limited ? Math.max(0, maxParticipant - current) : null)
+                .limited(limited)
+                .build();
     }
 
     private void syncActivityTags(Long activityId, List<Long> tagIds) {
@@ -437,6 +541,16 @@ public class ActivityServiceImpl implements ActivityService {
                 .maxParticipant(activityMain.getMaxParticipant())
                 .currentParticipant(activityMain.getCurrentParticipant())
                 .activityStatus(activityMain.getActivityStatus())
+                // ★ 这里用 resolveDisplayStatus(activityMain) 现算，而不是从缓存里读一个存好的值。
+                //
+                // displayStatus（3=已结束）依赖 LocalDateTime.now()，是"随时间自动变化"的派生值。
+                // 数据库里只存 activity_status = 1/4，前端看到的 3 是每次查询现算出来的。
+                // 如果把算好的值缓存 10 分钟，一个 10:00 结束的活动在 10:00~10:10 会一直显示"进行中" ——
+                // 而且数据库是对的、代码是对的，只有缓存是错的，排查时极易怀疑人生。
+                //
+                // 原则：缓存"事实"（activityStatus + endTime），不缓存"结论"（displayStatus）。
+                // 注意：走缓存路径时返回的对象里也带着（可能过期的）displayStatus 字段，
+                // 所以 ActivityCacheService 的调用方拿到结果后也要调一次本方法重算，见 getActivityDetail。
                 .displayStatus(resolveDisplayStatus(activityMain))
                 .signInEnabled(activityMain.getSignInEnabled())
                 .tags(tags)

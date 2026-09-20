@@ -25,4 +25,13 @@ public interface AuthService {
      * @return 登录结果
      */
     LoginResponse login(LoginRequest request);
+
+    /**
+     * 用户登出：把当前令牌加入黑名单，使其在剩余有效期内立即失效。
+     * <p>
+     * 之所以需要服务端参与，是因为 JWT 无状态 —— 前端删掉本地 token 并不能让它在服务端失效。
+     *
+     * @param token 当前请求携带的令牌
+     */
+    void logout(String token);
 }

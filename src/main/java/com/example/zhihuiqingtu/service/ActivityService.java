@@ -8,6 +8,7 @@ import com.example.zhihuiqingtu.dto.activity.CreateActivityRequest;
 import com.example.zhihuiqingtu.dto.activity.UpdateActivityRequest;
 import com.example.zhihuiqingtu.vo.activity.ActivityCoverUploadResponse;
 import com.example.zhihuiqingtu.vo.activity.ActivityResponse;
+import com.example.zhihuiqingtu.vo.activity.ActivityStockResponse;
 import com.example.zhihuiqingtu.vo.activity.ActivityTagVO;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -94,4 +95,23 @@ public interface ActivityService {
      * @return 标签列表
      */
     List<ActivityTagVO> listActivityTags();
+
+    /**
+     * 查询热门活动榜（按累计报名人数降序）。
+     * <p>
+     * 数据源是 Redis ZSet {@code activity:hot:enroll}，只存 activityId，需要回表补详情。
+     * 榜单为空时返回空列表，<b>不报错</b> —— "还没有热门活动"是正常状态。
+     *
+     * @param limit 返回条数，1~50
+     * @return 活动列表（已按热度降序）
+     */
+    List<ActivityResponse> listHotActivities(int limit);
+
+    /**
+     * 查询活动剩余名额。
+     *
+     * @param activityId 活动主键
+     * @return 剩余名额信息
+     */
+    ActivityStockResponse getActivityStock(Long activityId);
 }

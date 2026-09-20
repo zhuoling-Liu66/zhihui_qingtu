@@ -10,6 +10,7 @@ import com.example.zhihuiqingtu.dto.activity.UpdateActivityRequest;
 import com.example.zhihuiqingtu.service.ActivityService;
 import com.example.zhihuiqingtu.vo.activity.ActivityCoverUploadResponse;
 import com.example.zhihuiqingtu.vo.activity.ActivityResponse;
+import com.example.zhihuiqingtu.vo.activity.ActivityStockResponse;
 import com.example.zhihuiqingtu.vo.activity.ActivityTagVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -143,6 +144,7 @@ public class ActivityController {
     @GetMapping("/{activityId}")
     public ApiResponse<ActivityResponse> getActivityDetail(@PathVariable Long activityId) {
         return ApiResponse.success(activityService.getActivityDetail(activityId));
+
     }
 
     /**
@@ -153,5 +155,37 @@ public class ActivityController {
     @GetMapping("/tags")
     public ApiResponse<List<ActivityTagVO>> listActivityTags() {
         return ApiResponse.success(activityService.listActivityTags());
+    }
+
+    /**
+     * 热门活动榜（按累计报名人数降序）。
+     * <p>
+     * 数据来自 Redis ZSet {@code activity:hot:enroll}。
+     * <p>
+     * <b>注意路径不能和 {@code /{activityId}} 冲突</b>：Spring MVC 的路径匹配里，
+     * 字面量段 {@code /hot} 的优先级高于变量段 {@code /{activityId}}，
+     * 所以 {@code GET /api/activities/hot} 会进这个方法，而不是被当成 {@code activityId="hot"}。
+     * 但 {@code /hot} 必须能转成 Long 才安全 —— 这里靠的是字面量优先，不是靠转换失败。
+     *
+     * @param limit 返回条数，默认 10，取值 1~50
+     * @return 活动列表
+     */
+    @GetMapping("/hot")
+    public ApiResponse<List<ActivityResponse>> listHotActivities(
+            @RequestParam(value = "limit", defaultValue = "10") Integer limit) {
+        // 上限 50 是为了防止一次拉太多导致回表查询过重（limit 直接决定 IN (...) 里的元素个数）
+        int safeLimit = limit == null || limit < 1 ? 10 : Math.min(limit, 50);
+        return ApiResponse.success(activityService.listHotActivities(safeLimit));
+    }
+
+    /**
+     * 查询活动剩余名额（前端展示"仅剩 N 个名额"的紧迫感提示）。
+     *
+     * @param activityId 活动主键
+     * @return 剩余名额信息
+     */
+    @GetMapping("/{activityId}/stock")
+    public ApiResponse<ActivityStockResponse> getActivityStock(@PathVariable Long activityId) {
+        return ApiResponse.success(activityService.getActivityStock(activityId));
     }
 }
