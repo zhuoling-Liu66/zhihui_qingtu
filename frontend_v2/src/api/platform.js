@@ -7,6 +7,20 @@ export const authApi = {
   register(payload) {
     return http.post('/auth/register', payload)
   },
+  /**
+   * 登出：把当前 token 加入服务端黑名单，使其在剩余有效期内立即失效。
+   *
+   * 为什么不能只清本地缓存：JWT 是无状态的，服务端签发后不保存任何东西，
+   * 前端把 localStorage 里的 token 删掉，**服务端眼里那个 token 依然完全有效**
+   * （本项目有效期 12 小时）。如果被截获仍能用满 12 小时。
+   * 所以"退出登录"必须调这个接口，后端会按 `jti` 写一条
+   * `auth:token:blacklist:{jti}`（TTL = 该 token 剩余寿命），拦截器每次校验时查一次。
+   *
+   * 该接口本身也要走拦截器，所以调用时必须带着 token（请求拦截器已自动注入）。
+   */
+  logout() {
+    return http.post('/auth/logout')
+  },
 }
 
 export const activityApi = {
@@ -18,6 +32,30 @@ export const activityApi = {
   },
   tags() {
     return http.get('/activities/tags')
+  },
+  /**
+   * 热门活动榜（按累计报名人数降序）。
+   *
+   * 数据源是后端 Redis 的 ZSet `activity:hot:enroll`，只存 activityId + 分数，
+   * 服务端会批量回表补全详情（不是 N+1 查询），返回结构与 `detail` 一致。
+   *
+   * @param {number} limit 返回条数，后端限定 1~50，默认 10
+   */
+  hot(limit = 10) {
+    return http.get('/activities/hot', { params: { limit } })
+  },
+  /**
+   * 查询活动剩余名额。
+   *
+   * 用于详情页展示"仅剩 N 个名额"的紧迫感提示。
+   * 注意后端返回的 `remaining` 是**从数据库现算的权威值**，不是从 Redis 读的
+   * （Redis 里那个库存值是为了高并发扣减，可能与真实值有短暂偏差）。
+   *
+   * @returns {Promise<{activityId:number,maxParticipant:number|null,currentParticipant:number,remaining:number|null,limited:boolean}>}
+   *          `limited` 为 false 时 `remaining` 是 null，前端不应展示"剩余名额"。
+   */
+  stock(activityId) {
+    return http.get(`/activities/${activityId}/stock`)
   },
   create(payload) {
     return http.post('/activities', payload)
@@ -120,14 +158,5 @@ export const creditApi = {
   },
   review(recordId, payload) {
     return http.patch(`/credits/${recordId}/review`, payload)
-  },
-}
-
-export const recommendationApi = {
-  query(payload) {
-    return http.post('/recommendations/query', payload)
-  },
-  log(payload) {
-    return http.post('/recommendations/logs', payload)
   },
 }

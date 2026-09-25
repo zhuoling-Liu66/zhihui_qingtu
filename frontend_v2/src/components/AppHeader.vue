@@ -32,8 +32,13 @@
         </div>
         <div class="sidebar-userbox__actions">
           <router-link class="sidebar-userbox__button" to="/profile">个人中心</router-link>
-          <button type="button" class="sidebar-userbox__button sidebar-userbox__button--ghost" @click="clearUser">
-            退出登录
+          <button
+            type="button"
+            class="sidebar-userbox__button sidebar-userbox__button--ghost"
+            :disabled="loggingOut"
+            @click="handleLogout"
+          >
+            {{ loggingOut ? '退出中…' : '退出登录' }}
           </button>
         </div>
         <p class="sidebar-userbox__hint">学分审核入口：我发布的活动 -> 学分活动卡片</p>
@@ -64,7 +69,7 @@
 
       <div class="workspace-topbar__summary">
         <span class="workspace-topbar__eyebrow">Campus Activity Hub</span>
-        <strong>把第二课堂、志愿服务、组队邀请和 AI 推荐放进同一条校园信息流。</strong>
+        <strong>把第二课堂、志愿服务和组队邀请放进同一条校园信息流。</strong>
       </div>
     </div>
 
@@ -85,6 +90,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import {
   Calendar,
   DataAnalysis,
@@ -93,6 +99,7 @@ import {
   Position,
   UserFilled,
 } from '@element-plus/icons-vue'
+import { authApi } from '@/api/platform'
 import { topQuickLinks } from '@/constants/ui'
 import { useSession } from '@/composables/useSession'
 
@@ -101,6 +108,39 @@ defineEmits(['open-auth'])
 const route = useRoute()
 const router = useRouter()
 const { user, isLoggedIn, clearUser } = useSession()
+
+const loggingOut = ref(false)
+
+/**
+ * 退出登录。
+ *
+ * 关键点：**必须先调后端 `/auth/logout`，再清本地缓存**。
+ *
+ * 原来的实现只有一个 `clearUser()`（删 localStorage），这在 JWT 下是不够的：
+ * JWT 是无状态的，服务端不保存任何会话，所以"前端删掉 token"并不会让服务端那串 token 失效 ——
+ * 它依然能通过签名校验，直到 12 小时后自然过期。若期间被截获，等于没退出。
+ *
+ * 后端现在会把 token 的 `jti` 写进 Redis 黑名单（TTL = 该 token 剩余寿命），
+ * 拦截器每次请求多查一步，从而实现"立即失效"。
+ *
+ * 顺序不能颠倒：如果先 `clearUser()`，请求拦截器就拿不到 token 了，
+ * 登出接口会因为缺 token 而 401，黑名单永远写不进去。
+ * 而登出请求本身也可能失败（比如网络断了），这时仍然要清本地会话，
+ * 否则用户会卡在"退不出去"的状态 —— 所以用 try/finally。
+ */
+const handleLogout = async () => {
+  loggingOut.value = true
+  try {
+    await authApi.logout()
+    ElMessage.success('已退出登录')
+  } catch {
+    // 请求层已经弹过错误提示了，这里只负责保证本地状态被清干净
+  } finally {
+    clearUser()
+    loggingOut.value = false
+    router.push({ name: 'home' })
+  }
+}
 
 const workspaceLinks = [
   { label: '首页逛场', to: { name: 'home' }, icon: HomeFilled, names: ['home'] },

@@ -23,9 +23,25 @@
             <div class="detail-hero__chips">
               <span v-for="tag in activity.tags || []" :key="tag.tagId">#{{ tag.tagName }}</span>
             </div>
-            <div class="detail-actions">
-              <el-button type="warning" size="large" @click="handleEnroll">我要报名</el-button>
-              <el-button size="large" @click="logRecommendationClick">记录推荐点击</el-button>
+            <div v-if="isEnrollable" class="detail-actions">
+              <el-button
+                type="warning"
+                size="large"
+                :loading="enrolling"
+                :disabled="!canEnroll"
+                @click="handleEnroll"
+              >
+                {{ enrollButtonText }}
+              </el-button>
+              <!--
+                名额紧张提示：数据来自 GET /api/activities/{id}/stock。
+                后端返回的 remaining 是**从数据库现算的权威值**（不是从 Redis 读的），
+                因为 Redis 里那个库存是为了高并发扣减、可能有短暂偏差，展示给人看的必须准确。
+                limited=false（活动不限人数）时刻意不显示这块，避免"剩余 null 个"这种荒唐文案。
+              -->
+              <span v-if="showStockHint" class="detail-stock-hint" :class="{ 'detail-stock-hint--urgent': isStockUrgent }">
+                {{ stockHintText }}
+              </span>
             </div>
           </div>
 
@@ -99,7 +115,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CoverImage from '@/components/CoverImage.vue'
-import { activityApi, enrollApi, recommendationApi } from '@/api/platform'
+import { activityApi, enrollApi } from '@/api/platform'
 import { useSession } from '@/composables/useSession'
 import {
   formatActivityStatusByActivity,
@@ -111,7 +127,9 @@ const route = useRoute()
 const { user } = useSession()
 
 const activity = ref(null)
+const stock = ref(null)
 const relatedActivitiesPool = ref([])
+const enrolling = ref(false)
 
 const relatedActivities = computed(() =>
   relatedActivitiesPool.value
@@ -119,9 +137,64 @@ const relatedActivities = computed(() =>
     .slice(0, 4),
 )
 
+// ─────────────────────────── 名额提示 ───────────────────────────
+
+/** 是否展示名额提示。活动不存在或活动不限人数（limited=false）时不展示。 */
+const showStockHint = computed(() => Boolean(stock.value?.limited))
+
+const isStockUrgent = computed(() => {
+  const remaining = stock.value?.remaining
+  return typeof remaining === 'number' && remaining > 0 && remaining <= 3
+})
+
+const stockHintText = computed(() => {
+  const s = stock.value
+  if (!s?.limited) {
+    return ''
+  }
+  if (s.remaining === 0) {
+    return '名额已满'
+  }
+  return isStockUrgent.value ? `仅剩 ${s.remaining} 个名额，抓紧报名` : `剩余 ${s.remaining} 个名额`
+})
+
+// ─────────────────────────── 报名按钮状态 ───────────────────────────
+
+/** 活动是否处于可报名状态（后端用 displayStatus 表示"已结束"，它是按 endTime 现算的）。 */
+const isEnrollable = computed(() => {
+  if (!activity.value) {
+    return false
+  }
+  const displayStatus = activity.value.displayStatus ?? activity.value.activityStatus
+  // 1=已发布；3=已结束（现算）；4=已取消。只有 1 允许报名。
+  return displayStatus === 1
+})
+
+const isSoldOut = computed(() => stock.value?.limited === true && stock.value?.remaining === 0)
+
+const canEnroll = computed(() => isEnrollable.value && !isSoldOut.value)
+
+const enrollButtonText = computed(() => {
+  if (!isEnrollable.value) {
+    return '当前不可报名'
+  }
+  return isSoldOut.value ? '名额已满' : '我要报名'
+})
+
+// ─────────────────────────── 数据加载 ───────────────────────────
+
 const loadDetail = async () => {
   const activityId = route.params.id
   activity.value = await activityApi.detail(activityId)
+
+  // 名额单独取，失败时降级为"不展示名额提示"（模板里 showStockHint 会因 stock 为 null 而 false），
+  // 而不是让整个详情页打不开 —— 名额只是辅助信息，详情本身才是主体。
+  try {
+    stock.value = await activityApi.stock(activityId)
+  } catch {
+    stock.value = null
+  }
+
   const page = await activityApi.list({ pageNo: 0, pageSize: 8 })
   relatedActivitiesPool.value = page.records || []
 }
@@ -132,34 +205,26 @@ const handleEnroll = async () => {
     return
   }
 
-  await enrollApi.create({
-    userId: user.value.userId,
-    activityId: activity.value.activityId,
-  })
+  enrolling.value = true
+  try {
+    await enrollApi.create({
+      userId: user.value.userId,
+      activityId: activity.value.activityId,
+    })
+    ElMessage.success('报名成功')
 
-  await recommendationApi.log({
-    userId: user.value.userId,
-    activityId: activity.value.activityId,
-    isClick: 1,
-    isEnroll: 1,
-  })
-
-  ElMessage.success('报名成功，已同步记录推荐日志')
-}
-
-const logRecommendationClick = async () => {
-  if (!user.value?.userId) {
-    ElMessage.warning('请先登录后记录行为')
-    return
+    // 报名成功后必须重新拉取，否则页面上的"参与人数/剩余名额"还是报名前的旧值。
+    // 注意后端在报名成功后会主动让活动详情缓存失效（activityCacheService.evict），
+    // 所以这里重新请求拿到的一定是最新数据，不会读到缓存里的旧计数。
+    await loadDetail()
+  } catch {
+    // 请求层已统一弹出错误提示。这里**不需要**再刷新：
+    // 常见失败是 4203（名额已满）或 4204（重复报名），此时后端数据没变。
+    // 但 4203 意味着本地看到的名额已经过期了，刷新一次能纠正显示。
+    await loadDetail()
+  } finally {
+    enrolling.value = false
   }
-
-  await recommendationApi.log({
-    userId: user.value.userId,
-    activityId: activity.value.activityId,
-    isClick: 1,
-    isEnroll: 0,
-  })
-  ElMessage.success('推荐点击已记录')
 }
 
 watch(

@@ -2,7 +2,7 @@
   <main class="page page-home">
     <section class="page-section page-section--announcement">
       <div class="announcement-bar">
-        <span>📣 网页版已升级为校园活动集市风格，支持学分活动、志愿服务、组队邀请和 AI 推荐联动。</span>
+        <span>📣 网页版已升级为校园活动集市风格，支持学分活动、志愿服务和组队邀请。</span>
       </div>
     </section>
 
@@ -44,39 +44,11 @@
       <div class="section-head">
         <div>
           <p class="section-head__kicker">猜你喜欢</p>
-          <h2>AI 推荐与主题入口</h2>
+          <h2>主题入口</h2>
         </div>
-        <el-button text @click="loadRecommendations">刷新推荐</el-button>
       </div>
 
       <div class="recommend-grid">
-        <article class="recommend-card recommend-card--ai">
-          <p class="section-head__kicker">AI 推荐</p>
-          <h3>{{ recommendationTitle }}</h3>
-          <p class="recommend-card__summary">{{ recommendationSummary }}</p>
-
-          <ul v-if="recommendPreviewActivities.length" class="recommend-card__list">
-            <li
-              v-for="activity in recommendPreviewActivities"
-              :key="activity.activityId"
-              class="recommend-card__list-item"
-              @click="goActivityDetail(activity.activityId)"
-            >
-              <span class="recommend-card__list-title">{{ activity.activityTitle }}</span>
-              <span class="recommend-card__list-meta">
-                {{ activity.tags?.[0]?.tagName || '校园活动' }}
-              </span>
-            </li>
-          </ul>
-          <div v-else class="recommend-card__placeholder">
-            登录后系统会结合兴趣标签、专业年级和参与历史，生成更贴近你的活动推荐。
-          </div>
-
-          <div v-if="visibleRecommendReasons.length" class="recommend-card__chips">
-            <span v-for="tag in visibleRecommendReasons" :key="tag">{{ tag }}</span>
-          </div>
-        </article>
-
         <article class="recommend-card recommend-card--credit" @click="jumpToSection('second-class')">
           <p class="section-head__kicker">学分专题</p>
           <h3>第二课堂、德育、体育可直达专题页</h3>
@@ -149,6 +121,39 @@
       </section>
 
       <aside class="feed-side">
+        <!--
+          本周热门：数据来自后端 Redis 的 ZSet `activity:hot:enroll`。
+          为什么值得单独放一块：它是"按累计报名人数实时排序"的榜单，
+          用 MySQL 做需要 ORDER BY count DESC 扫全表，而 ZSet 的 ZREVRANGE 是 O(log N + 10)。
+          所以这里的顺序本身就带信息量，不要用前端再排序把它打乱。
+        -->
+        <section v-if="hotActivities.length" class="side-panel card-surface">
+          <div class="section-head section-head--compact">
+            <div>
+              <p class="section-head__kicker">本周热门</p>
+              <h3>大家都在报</h3>
+            </div>
+          </div>
+          <ol class="hot-rank">
+            <li
+              v-for="(item, index) in hotActivities"
+              :key="item.activityId"
+              class="hot-rank__item"
+              @click="router.push({ name: 'activity-detail', params: { id: item.activityId } })"
+            >
+              <span class="hot-rank__no" :class="`hot-rank__no--${index < 3 ? index + 1 : 'plain'}`">
+                {{ index + 1 }}
+              </span>
+              <div class="hot-rank__body">
+                <strong class="hot-rank__title">{{ item.activityTitle }}</strong>
+                <span class="hot-rank__meta">
+                  {{ item.currentParticipant }}/{{ item.maxParticipant || '不限' }} 人已报名
+                </span>
+              </div>
+            </li>
+          </ol>
+        </section>
+
         <section class="side-panel card-surface">
           <div class="section-head section-head--compact">
             <div>
@@ -205,56 +210,25 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ActivityCard from '@/components/ActivityCard.vue'
 import MegaCategoryRail from '@/components/MegaCategoryRail.vue'
-import { activityApi, recommendationApi, teamApi } from '@/api/platform'
+import { activityApi, teamApi } from '@/api/platform'
 import { featureModules, homeTopicEntries, railPanels } from '@/constants/ui'
-import { useSession } from '@/composables/useSession'
 
 const router = useRouter()
-const { user } = useSession()
 
 const activities = ref([])
 const tags = ref([])
 const teamCards = ref([])
-const recommendIds = ref([])
-const recommendReasons = ref({})
+const hotActivities = ref([])
 const activeTopicKey = ref(homeTopicEntries[0]?.label || '')
 
 const featuredActivities = computed(() =>
   activities.value.filter((item) => [1, 2, 3].includes(item.activityStatus)).slice(0, 9),
 )
 
-const recommendedActivities = computed(() =>
-  recommendIds.value
-    .map((id) => activities.value.find((item) => item.activityId === id))
-    .filter(Boolean),
-)
-
-const visibleRecommendReasons = computed(() =>
-  Object.values(recommendReasons.value || {})
-    .flat()
-    .filter(Boolean)
-    .slice(0, 4),
-)
-
-const recommendPreviewActivities = computed(() => recommendedActivities.value.slice(0, 3))
 const teamPreviewCards = computed(() => teamCards.value.slice(0, 3))
 const creditTopics = computed(() =>
   homeTopicEntries.filter((entry) => ['second-class', 'moral', 'physical'].includes(entry.slug)),
 )
-
-const recommendationTitle = computed(() => {
-  if (recommendedActivities.value.length) {
-    return 'AI 正在根据你的画像推送更合适的校园活动'
-  }
-  return '登录后可获得 AI 个性化推荐'
-})
-
-const recommendationSummary = computed(() => {
-  if (recommendedActivities.value.length) {
-    return `当前已命中 ${recommendedActivities.value.length} 条推荐活动，可继续进入专题页或详情页查看。`
-  }
-  return '未登录时仍可先浏览主题入口；登录后系统会结合兴趣标签、专业年级和学分缺口进行推荐。'
-})
 
 const jumpTopic = (entry) => {
   activeTopicKey.value = entry.label
@@ -266,10 +240,6 @@ const jumpTopic = (entry) => {
 }
 
 const jumpFeature = (slug) => {
-  if (slug === 'recommend') {
-    router.push({ name: 'search', query: { q: 'AI 推荐' } })
-    return
-  }
   router.push({ name: 'section', params: { slug } })
 }
 
@@ -277,15 +247,21 @@ const jumpToSection = (slug) => {
   router.push({ name: 'section', params: { slug } })
 }
 
-const goActivityDetail = (activityId) => {
-  router.push({ name: 'activity-detail', params: { id: activityId } })
-}
-
 const goTeamDetail = (teamId) => {
   router.push({ name: 'team-detail', params: { id: teamId } })
 }
 
 const loadHomeData = async () => {
+  // 先把"锦上添花"的热门榜单独取，失败也不影响主体内容。
+  // 为什么单独写一个 try：Redis 临时不可用时热门榜会失败，
+  // 但活动列表是首页主体，它失败才应该让用户知道，所以两者不能绑在同一个 try 里。
+  try {
+    hotActivities.value = (await activityApi.hot(5)) || []
+  } catch {
+    // 请求层已经提示过了，这里静默降级：榜单区块直接不渲染（模板里有 v-if）
+    hotActivities.value = []
+  }
+
   const [activityPage, tagList, teamPage] = await Promise.all([
     activityApi.list({ pageNo: 0, pageSize: 18 }),
     activityApi.tags(),
@@ -297,29 +273,7 @@ const loadHomeData = async () => {
   teamCards.value = teamPage.records || []
 }
 
-const loadRecommendations = async () => {
-  if (!user.value?.userId) {
-    recommendIds.value = []
-    recommendReasons.value = {}
-    return
-  }
-
-  const result = await recommendationApi.query({
-    userId: user.value.userId,
-    grade: user.value.grade || '未知',
-    major: user.value.major || '未知',
-    interestTagIds: [],
-    creditGap: 2,
-    availableTimeSlots: ['周三晚上', '周末白天'],
-    limit: 6,
-  })
-
-  recommendIds.value = result.recommendedActivityIds || []
-  recommendReasons.value = result.reasonTags || {}
-}
-
 onMounted(async () => {
   await loadHomeData()
-  await loadRecommendations()
 })
 </script>

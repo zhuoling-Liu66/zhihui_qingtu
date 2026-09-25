@@ -630,12 +630,6 @@ textarea {
     url("./assets/组队邀请.png");
 }
 
-.hero-module--pink {
-  background-image:
-    linear-gradient(135deg, rgba(255, 216, 240, 0.52), rgba(233, 209, 255, 0.48)),
-    url("./assets/科技感.jpg");
-}
-
 .recommendation-strip {
   padding: 28px;
   background: rgba(255, 255, 255, 0.9);
@@ -662,7 +656,7 @@ textarea {
 
 .recommend-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
   margin-bottom: 24px;
 }
@@ -701,13 +695,6 @@ textarea {
   border-color: rgba(255, 255, 255, 0.78);
 }
 
-.recommend-card--ai {
-  color: #fff;
-  background:
-    linear-gradient(135deg, rgba(35, 48, 76, 0.94), rgba(59, 72, 102, 0.9)),
-    url("./assets/bg-module-ai.svg") center/cover no-repeat;
-}
-
 .recommend-card--credit,
 .recommend-card--team {
   cursor: pointer;
@@ -731,10 +718,6 @@ textarea {
   margin-bottom: 12px;
 }
 
-.recommend-card--ai .section-head__kicker {
-  color: rgba(255, 255, 255, 0.74);
-}
-
 .recommend-card h3 {
   margin: 0 0 12px;
   font-size: 1.48rem;
@@ -748,10 +731,6 @@ textarea {
   color: inherit;
 }
 
-.recommend-card--ai .recommend-card__summary {
-  color: rgba(255, 255, 255, 0.92);
-}
-
 .recommend-card__placeholder {
   margin-top: 18px;
   padding: 14px 16px;
@@ -760,11 +739,6 @@ textarea {
   line-height: 1.72;
   background: rgba(255, 255, 255, 0.72);
   color: var(--muted);
-}
-
-.recommend-card--ai .recommend-card__placeholder {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.84);
 }
 
 .recommend-card__list {
@@ -801,16 +775,6 @@ textarea {
   background: rgba(255, 255, 255, 0.88);
 }
 
-.recommend-card--ai .recommend-card__list-item {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.16);
-}
-
-.recommend-card--ai .recommend-card__list-item:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.18);
-}
-
 .recommend-card__list-title {
   min-width: 0;
   overflow: hidden;
@@ -824,10 +788,6 @@ textarea {
   flex: 0 0 auto;
   font-size: 0.84rem;
   color: var(--muted);
-}
-
-.recommend-card--ai .recommend-card__list-meta {
-  color: rgba(255, 255, 255, 0.72);
 }
 
 .recommend-card__chips {
@@ -858,18 +818,6 @@ textarea {
   transform: translateY(-2px);
   border-color: rgba(236, 189, 76, 0.38);
   background: rgba(255, 255, 255, 0.9);
-}
-
-.recommend-card--ai .recommend-card__chips span {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.94);
-  box-shadow: none;
-}
-
-.recommend-card--ai .recommend-card__chips span:hover {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.24);
 }
 
 .topic-tabs {
@@ -1368,6 +1316,92 @@ textarea {
   margin-top: 20px;
 }
 
+/* ── 剩余名额提示（数据来自 GET /api/activities/{id}/stock）── */
+.detail-stock-hint {
+  align-self: center;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+/* 名额紧张时才变红：平时不打扰，快满时才有"紧迫感"的作用 */
+.detail-stock-hint--urgent {
+  color: #d9480f;
+  font-weight: 600;
+}
+
+/* ── 首页"本周热门"榜单（数据来自 Redis ZSet activity:hot:enroll）── */
+.hot-rank {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hot-rank__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #f7f8fa;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.hot-rank__item:hover {
+  background: #fff7e8;
+  transform: translateX(2px);
+}
+
+/* 名次徽标：前三名用暖色强调，其余保持低调 */
+.hot-rank__no {
+  flex: 0 0 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--muted);
+}
+
+.hot-rank__no--1 {
+  background: linear-gradient(135deg, #ffb020, #ff8a00);
+  color: #fff;
+}
+
+.hot-rank__no--2 {
+  background: linear-gradient(135deg, #b8c4d4, #94a3b8);
+  color: #fff;
+}
+
+.hot-rank__no--3 {
+  background: linear-gradient(135deg, #e0a878, #c98b53);
+  color: #fff;
+}
+
+.hot-rank__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hot-rank__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hot-rank__meta {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .section-card-grid,
 .search-result-grid {
   display: grid;
@@ -1645,10 +1679,6 @@ textarea {
 @media (max-width: 1280px) {
   .recommend-grid {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .recommend-card--ai {
-    grid-column: 1 / -1;
   }
 
   .topic-tabs {
