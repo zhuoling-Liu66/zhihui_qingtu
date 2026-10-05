@@ -11,6 +11,15 @@ import com.example.zhihuiqingtu.vo.team.TeamResponse;
 
 /**
  * 组队业务服务接口。
+ *
+ * <p><b>身份参数约定（安全迁移后）：</b>本接口的任何方法都<b>不接受</b>
+ * {@code leaderUserId} / {@code operatorUserId} / {@code userId} 这类"客户端自报身份"的参数。
+ * 队长、申请人、审核人、操作人一律由实现类从 Spring Security 上下文
+ * （{@code CurrentUser.requireUserId()}）读取，来源是认证过的 JWT，客户端无法伪造。
+ * <p>
+ * 唯一例外是 {@link com.example.zhihuiqingtu.dto.team.TeamQueryRequest#getLeaderUserId()}：
+ * 它是<b>列表查询的筛选条件</b>（"查某个队长带的队"），不是身份声明，
+ * 伪造它最多只能多查几条本来就有权查看的公开队伍，不构成越权，因此保留。
  */
 public interface TeamService {
 

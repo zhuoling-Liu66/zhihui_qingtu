@@ -145,8 +145,9 @@ const enrollmentStatusText = (status) => {
 
 const loadEnrollments = async () => {
   if (!user.value?.userId) return
+  // 不再传 userId：后端 EnrollmentQueryRequest 已删除该字段，
+  // 服务端强制只返回当前登录用户的报名记录（避免用别人学号查他人参与情况）。
   const page = await enrollApi.list({
-    userId: user.value.userId,
     pageNo: 0,
     pageSize: 50,
   })
@@ -154,13 +155,15 @@ const loadEnrollments = async () => {
 }
 
 const handleSignIn = async (item) => {
-  await enrollApi.signIn(item.enrollId, user.value.userId)
+  // 不再传 userId：后端从 JWT 取当前登录用户，并按归属校验这条报名记录是不是你的
+  await enrollApi.signIn(item.enrollId)
   ElMessage.success('签到成功，活动已完成')
   await loadEnrollments()
 }
 
 const handleCancel = async (item) => {
-  await enrollApi.cancel(item.enrollId, user.value.userId)
+  // 同上：身份由后端推导，"能不能取消"由服务端说了算，前端传什么都不影响
+  await enrollApi.cancel(item.enrollId)
   ElMessage.success('已退出活动')
   await loadEnrollments()
 }
@@ -176,8 +179,9 @@ const submitFeedback = async () => {
   if (!activeEnrollmentId.value) return
   submittingFeedback.value = true
   try {
+    // 不再传 userId：后端 FeedbackEnrollmentRequest 没有该字段，
+    // 评价人一律取当前登录用户，防止伪造成他人学号去评价别人的报名记录。
     await enrollApi.feedback(activeEnrollmentId.value, {
-      userId: user.value.userId,
       feedbackScore: feedbackForm.feedbackScore,
       feedbackContent: feedbackForm.feedbackContent,
     })

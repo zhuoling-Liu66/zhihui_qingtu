@@ -149,7 +149,7 @@ public class ActivityCacheService {
     /**
      * 让缓存失效。活动发生任何变更后都必须调用。
      * <p>
-     * 注意是<b>删除</b>而不是更新，理由见类注释。
+     * 注意是<b>删除</b>
      * <p>
      * <b>哪些路径需要调用</b>，是缓存改造中最容易出错的部分，本项目逐一核对的结论是：
      * <pre>
@@ -157,7 +157,6 @@ public class ActivityCacheService {
      * changeActivityStatus   ✅ 需要（改了 activity_status）
      * updateSignInSwitch     ✅ 需要（改了 sign_in_enabled）
      * deleteActivity         ✅ 需要
-     * createActivity         ❌ 不需要 —— 新建的活动不可能已经在缓存里
      * createEnrollment       ✅ 需要（改了 current_participant，详情里含这个字段）
      * cancelEnrollment       ✅ 需要（同上）
      * </pre>

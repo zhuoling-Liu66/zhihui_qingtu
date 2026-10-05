@@ -203,8 +203,9 @@ const loadCredits = async () => {
 }
 
 const reviewRecord = async (record, verifyStatus, reason = '') => {
+  // 不再传 verifyUserId：审核人由后端从 JWT 取，
+  // 并自行判定"是不是管理员/老师/该活动发布者"，前端无从伪造
   await creditApi.review(record.recordId, {
-    verifyUserId: user.value.userId,
     verifyStatus,
     rejectReason: reason,
   })

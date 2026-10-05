@@ -78,29 +78,38 @@ export const activityApi = {
       },
     })
   },
-  remove(activityId, operatorUserId) {
-    return http.delete(`/activities/${activityId}`, {
-      params: { operatorUserId },
-    })
+  /**
+   * 删除活动。
+   * <p>
+   * 已去掉 `operatorUserId` 参数：后端改为从 JWT 取当前登录身份。
+   * 前端再传这个参数也不会被读取（后端 DTO/参数已删除），
+   * 这是"身份只由服务端推导"的必然结果。
+   */
+  remove(activityId) {
+    return http.delete(`/activities/${activityId}`)
   },
 }
 
 export const enrollApi = {
+  /**
+   * 报名活动。
+   * <p>
+   * 请求体里**不再需要 userId** —— 报名人由后端从 JWT 取。
+   * 调用方只需传 `{ activityId }`。
+   */
   create(payload) {
     return http.post('/enrollments', payload)
   },
   list(params) {
     return http.get('/enrollments', { params })
   },
-  cancel(enrollId, userId) {
-    return http.delete(`/enrollments/${enrollId}`, {
-      params: { userId },
-    })
+  /** 取消报名：后端按当前登录用户校验归属，不需要（也无法）指定 userId。 */
+  cancel(enrollId) {
+    return http.delete(`/enrollments/${enrollId}`)
   },
-  signIn(enrollId, userId) {
-    return http.patch(`/enrollments/${enrollId}/sign-in`, null, {
-      params: { userId },
-    })
+  /** 签到：同上。 */
+  signIn(enrollId) {
+    return http.patch(`/enrollments/${enrollId}/sign-in`)
   },
   feedback(enrollId, payload) {
     return http.patch(`/enrollments/${enrollId}/feedback`, payload)
@@ -153,9 +162,16 @@ export const creditApi = {
   list(params) {
     return http.get('/credits', { params })
   },
-  statistics(userId) {
-    return http.get('/credits/statistics', { params: { userId } })
+  /**
+   * 学分统计。
+   * <p>
+   * 已去掉 `userId` 参数：后端强制只统计**当前登录用户**的学分。
+   * 这是为了堵住"查任意同学学分明细"的信息泄露。
+   */
+  statistics() {
+    return http.get('/credits/statistics')
   },
+  /** 审核学分：审核人由后端从 JWT 取，请求体里不需要（也不应传）`verifyUserId`。 */
   review(recordId, payload) {
     return http.patch(`/credits/${recordId}/review`, payload)
   },

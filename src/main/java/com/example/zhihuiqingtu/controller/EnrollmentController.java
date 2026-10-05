@@ -17,13 +17,15 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 报名参与模块控制器。
  * <p>
  * 负责活动报名、退出、签到、评价和报名记录查询。
+ * <p>
+ * 本模块<b>不接受任何客户端自报的身份</b>：报名人/退出人/签到人/评价人一律由
+ * Spring Security 从 JWT 解析后，由服务层通过 {@code CurrentUser} 读取。
  */
 @RestController
 @RequestMapping("/api/enrollments")
@@ -48,30 +50,30 @@ public class EnrollmentController {
 
     /**
      * 取消报名。
+     * <p>
+     * 不再需要 {@code userId} 查询参数：操作者身份由 Spring Security 从 JWT 解析，
+     * 服务层通过 {@code CurrentUser} 读取。少一个可伪造的入参，就少一处越权面。
      *
      * @param enrollId 报名记录主键
-     * @param userId   当前操作用户
      * @return 更新后的报名记录
      */
     @DeleteMapping("/{enrollId}")
-    public ApiResponse<EnrollmentResponse> cancelEnrollment(
-            @PathVariable Long enrollId,
-            @RequestParam String userId) {
-        return ApiResponse.success("取消报名成功", enrollmentService.cancelEnrollment(enrollId, userId));
+    public ApiResponse<EnrollmentResponse> cancelEnrollment(@PathVariable Long enrollId) {
+        return ApiResponse.success("取消报名成功", enrollmentService.cancelEnrollment(enrollId));
     }
 
     /**
      * 用户自助签到。
+     * <p>
+     * 不再需要 {@code userId} 查询参数：签到人身份由 Spring Security 从 JWT 解析，
+     * 服务层通过 {@code CurrentUser} 读取。少一个可伪造的入参，就少一处越权面。
      *
      * @param enrollId 报名记录主键
-     * @param userId   当前签到用户
      * @return 签到后的报名记录
      */
     @PatchMapping("/{enrollId}/sign-in")
-    public ApiResponse<EnrollmentResponse> signIn(
-            @PathVariable Long enrollId,
-            @RequestParam String userId) {
-        return ApiResponse.success("签到成功", enrollmentService.signIn(enrollId, userId));
+    public ApiResponse<EnrollmentResponse> signIn(@PathVariable Long enrollId) {
+        return ApiResponse.success("签到成功", enrollmentService.signIn(enrollId));
     }
 
     /**

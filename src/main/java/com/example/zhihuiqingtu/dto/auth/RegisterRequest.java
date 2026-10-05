@@ -42,8 +42,8 @@ public class RegisterRequest {
     /**
      * 用户角色。
      */
-    @NotNull(message = "不能为空")
-    private Integer userRole;
+//    @NotNull(message = "不能为空")
+//    private Integer userRole;
 
     /**
      * 密码明文。

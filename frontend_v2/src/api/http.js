@@ -14,44 +14,55 @@ const http = axios.create({
 })
 
 /**
- * 请求拦截器：注入 token 请求头。
+ * 请求拦截器：把 JWT 放进标准的 Authorization 头。
  *
- * 这是**本文件最关键的一段**。后端 `TokenInterceptor` 要求除
- * `/login`、`/register`、`/uploads/**`、接口文档外，**所有请求都必须带 `token` 请求头**，
- * 否则直接返回 `401 {"code":4010,"message":"未登录，请先登录"}`。
+ * 后端已从"手写拦截器"迁移到 **Spring Security 的 OAuth2 Resource Server**，
+ * 它按标准约定从 `Authorization: Bearer <token>` 取令牌。
  *
- * 在此之前本实例只有响应拦截器、没有请求拦截器，导致登录后拿到的 token
- * 一直躺在 localStorage 里没被用上 —— 表现为"登录成功，但首页/详情/列表全是空的"。
- * 而登录接口本身不需要 token，所以登录功能正常，问题看起来像"登录了但没生效"。
- *
- * 注意请求头的名字是 **`token`**（不是标准的 `Authorization: Bearer xxx`），
- * 这是本项目后端的约定，见 `interceptor/TokenInterceptor.java` 里的 `request.getHeader("token")`。
+ * 历史背景（前端这里也踩过一并修复）：
+ *   1. 最初本实例**只有响应拦截器、没有请求拦截器**，登录拿到的 token
+ *      一直躺在 localStorage 里没人用，导致除登录外所有接口 401，
+ *      表现为"登录成功但页面全空"（登录本身不需要 token，所以看不出问题）。
+ *   2. 后来补了拦截器，但用的是项目自定义的裸 `token` 头；
+ *      换成 Spring Security 后这个头不再被默认读取，会造成**所有带合法 token
+ *      的请求都 401**（令牌压根没被解析，认证上下文为空）。
+ *      后端为此实现了 `CompositeBearerTokenResolver` 同时兼容两种头，
+ *      但前端统一改用标准格式，既符合规范，也和 Swagger/Postman/网关等工具一致。
  */
 http.interceptors.request.use((config) => {
   const token = getToken()
   if (token) {
-    // 用 AxiosHeaders 的 .set() 而不是 `config.headers.token = token`：
-    // axios 1.x 把 config.headers 规范化成 AxiosHeaders 实例，.set() 是它保证生效的写法，
-    // 这也是官方文档和社区一致推荐的方式（属性赋值在部分版本/部分适配器下不可靠）。
-    config.headers.set('token', token)
+    // 用 AxiosHeaders 的 .set() 而不是 `config.headers.Authorization = ...`：
+    // axios 1.x 把 config.headers 规范化成 AxiosHeaders 实例，.set() 是保证生效的写法
+    // （直接属性赋值在部分版本/适配器下不可靠，本项目实测踩过）。
+    config.headers.set('Authorization', `Bearer ${token}`)
   }
   return config
 })
 
 /**
- * 判断一个响应是不是"未授权"。
+ * 判断一个响应是不是"未授权（401）"。
  *
- * 要同时看两个地方，因为项目里未授权有两种返回形态：
- * 1. **拦截器**直接写的：HTTP 状态码是 401，响应体是 `{code:4010,...}`；
- * 2. 其他业务错误：HTTP 状态码 200，业务 `code` 非 0。
+ * 迁移到 Spring Security 后，401 和 403 由框架区分开了，含义不同：
+ *   · **401** = 没登录 / 令牌无效或过期 → 应引导用户重新登录
+ *   · **403** = 已登录但没有权限   → 重新登录也没用，只需提示
+ * 所以这里要把两者分开处理，不能都当成"登录失效"。
  *
- * 只判断 `error.response.status === 401` 会漏掉第 2 种；
- * 只判断业务 code 又会把网络层的 401 当成普通异常。
+ * 判据要同时看 HTTP 状态码和业务 code：
+ * 框架写的 401/403 带 HTTP 状态码；而项目里其他业务错误是
+ * HTTP 200 + 非 0 的 body.code。只看一边都会漏。
  */
 function isUnauthorized(error) {
   return error?.response?.status === 401
     || error?.response?.data?.code === 4010
     || error?.response?.data?.code === 401
+}
+
+/** 已登录但无权限（403）：只提示，不弹登录框。 */
+function isForbidden(error) {
+  return error?.response?.status === 403
+    || error?.response?.data?.code === 4030
+    || error?.response?.data?.code === 403
 }
 
 http.interceptors.response.use(
@@ -69,12 +80,19 @@ http.interceptors.response.use(
   },
   (error) => {
     if (isUnauthorized(error)) {
-      // 401 单独处理：不弹"网络异常"这种误导性提示，而是提示重新登录。
-      // emitUnauthorized 会清掉本地失效凭证（token 有效期 12 小时，过期后必然走到这里），
+      // 令牌无效/过期：清掉本地失效凭证并弹登录框。
+      // emitUnauthorized 会清 session（token 有效期 12 小时，过期后必然走到这里），
       // 并由 App.vue 注册的回调弹出登录框。
       const message = error.response?.data?.message || '登录已失效，请重新登录'
       ElMessage.warning(message)
       emitUnauthorized()
+      return Promise.reject(error)
+    }
+
+    if (isForbidden(error)) {
+      // 权限不足：不动 session（用户还是登录状态），只给提示。
+      // 如果这里也清 session，用户会被无辜踢下线，体验很差。
+      ElMessage.error(error.response?.data?.message || '没有权限执行该操作')
       return Promise.reject(error)
     }
 

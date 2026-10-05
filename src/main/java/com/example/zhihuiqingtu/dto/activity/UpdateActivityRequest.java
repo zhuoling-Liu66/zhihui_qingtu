@@ -13,15 +13,12 @@ import java.util.List;
 
 /**
  * 更新活动请求。
+ * <p>
+ * 注意：没有"操作人"字段。操作者由服务端从 JWT 取当前登录用户
+ * （见 {@code CurrentUser}），不接受客户端自报。
  */
 @Data
 public class UpdateActivityRequest {
-
-    /**
-     * 操作人学号或工号。
-     */
-    @NotBlank(message = "操作人不能为空")
-    private String operatorUserId;
 
     /**
      * 活动标题。

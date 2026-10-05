@@ -1,12 +1,13 @@
 package com.example.zhihuiqingtu.service.impl;
 
-import com.example.zhihuiqingtu.common.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.Instant;
 
 /**
  * 令牌黑名单服务 —— 让无状态的 JWT 支持"登出"。
@@ -56,15 +57,30 @@ public class TokenBlacklistService {
      *
      * @param token 待失效的 JWT
      */
-    public void blacklist(String token) {
-        String jti = JwtUtil.getJti(token);
-        if (jti == null) {
+    public void blacklist(Jwt jwt) {
+        blacklist(jwt.getId(), jwt.getExpiresAt());
+    }
+
+    /**
+     * 把令牌加入黑名单（内部实现）。
+     *
+     * @param jti       令牌唯一标识（JWT 的 {@code jti}）
+     * @param expiresAt 令牌过期时间，用于计算 TTL；为 null 时不写入（无法确定寿命）
+     */
+    public void blacklist(String jti, Instant expiresAt) {
+        if (jti == null || jti.isBlank()) {
             // 兼容加 jti 之前签发的旧令牌：没有唯一标识就没法进黑名单，只能等它自然过期
             log.warn("令牌缺少 jti，无法加入黑名单（可能是改造前签发的旧令牌）");
             return;
         }
-        long remainingSeconds = JwtUtil.getRemainingSeconds(token);
+        if (expiresAt == null) {
+            log.warn("令牌没有 exp，无法确定黑名单 TTL，跳过 jti={}", jti);
+            return;
+        }
+        long remainingSeconds = Duration.between(Instant.now(), expiresAt).getSeconds();
         if (remainingSeconds <= 0) {
+            // 已经过期的令牌不需要进黑名单：签名/有效期校验这一关就把它挡住了，
+            // 写进去只会占内存（极端情况下还会落一条没有 TTL 的常驻 key）。
             log.debug("令牌已过期，无需加入黑名单 jti={}", jti);
             return;
         }
@@ -75,13 +91,27 @@ public class TokenBlacklistService {
 
     /**
      * 判断令牌是否已被登出（或在黑名单中）。
+     * <p>
+     * 迁移说明：原来这个方法收的是原始 token 字符串、内部自己解析 jti；
+     * 现在改收已经被 Spring Security <b>校验通过</b>的 {@link Jwt} 对象 ——
+     * 因为调用它的是框架的令牌校验器（{@code JwtBlacklistValidator}），
+     * 那时令牌已经解析好了，没必要再解析一次。
      *
-     * @param token JWT
+     * @param jwt 已解析并验签的 JWT
      * @return true 表示该令牌已被撤销
      */
-    public boolean isBlacklisted(String token) {
-        String jti = JwtUtil.getJti(token);
-        if (jti == null) {
+    public boolean isBlacklisted(Jwt jwt) {
+        return isBlacklisted(jwt.getId());
+    }
+
+    /**
+     * 按 jti 判断是否在黑名单中（内部实现）。
+     *
+     * @param jti 令牌唯一标识
+     * @return true 表示已撤销；jti 为空时返回 false（无标识无从判断）
+     */
+    public boolean isBlacklisted(String jti) {
+        if (jti == null || jti.isBlank()) {
             return false;
         }
         return Boolean.TRUE.equals(stringRedisTemplate.hasKey(blacklistKey(jti)));

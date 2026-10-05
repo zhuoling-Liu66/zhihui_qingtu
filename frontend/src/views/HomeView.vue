@@ -2,7 +2,7 @@
   <main class="page page-home">
     <section class="page-section page-section--announcement">
       <div class="announcement-bar">
-        <span>春季活动簿持续更新，学分活动、志愿服务、校园组队与 AI 推荐都在这一页慢慢展开。</span>
+        <span>春季活动簿持续更新，学分活动、志愿服务与校园组队都在这一页慢慢展开。</span>
       </div>
     </section>
 
@@ -54,9 +54,8 @@
       <div class="section-head">
         <div>
           <p class="section-head__kicker">猜你喜欢</p>
-          <h2>AI 推荐与主题入口</h2>
+          <h2>主题入口</h2>
         </div>
-        <el-button text @click="loadRecommendations">刷新推荐</el-button>
       </div>
 
       <div class="topic-tabs">
@@ -73,16 +72,6 @@
       </div>
 
       <div class="recommend-grid">
-        <article class="recommend-card recommend-card--ai">
-          <p class="section-head__kicker">AI 推荐</p>
-          <h3>AI 推荐</h3>
-          <p>{{ recommendationSummary }}</p>
-          <span class="recommend-card__handnote">智能匹配中</span>
-          <div class="recommend-card__chips">
-            <span v-for="tag in visibleRecommendReasons" :key="tag">{{ tag }}</span>
-          </div>
-        </article>
-
         <article class="recommend-card recommend-card--credit">
           <p class="section-head__kicker">学分专区</p>
           <h3>第二课堂与六类学分入口</h3>
@@ -173,59 +162,27 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Clock, Connection, Opportunity, Reading } from '@element-plus/icons-vue'
+import { Clock, Connection, Reading } from '@element-plus/icons-vue'
 import ActivityCard from '@/components/ActivityCard.vue'
 import MegaCategoryRail from '@/components/MegaCategoryRail.vue'
-import { activityApi, recommendationApi, teamApi } from '@/api/platform'
+import { activityApi, teamApi } from '@/api/platform'
 import { featureModules, homeTopicEntries, railPanels } from '@/constants/ui'
-import { useSession } from '@/composables/useSession'
 
 const router = useRouter()
-const { user } = useSession()
 
 const activities = ref([])
 const tags = ref([])
 const teamCards = ref([])
-const recommendIds = ref([])
-const recommendReasons = ref({})
 
 const featureIconMap = {
   reading: Reading,
   clock: Clock,
   connection: Connection,
-  idea: Opportunity,
 }
 
 const featuredActivities = computed(() =>
   activities.value.filter((item) => [1, 2, 3].includes(item.activityStatus)).slice(0, 9),
 )
-
-const recommendedActivities = computed(() =>
-  recommendIds.value
-    .map((id) => activities.value.find((item) => item.activityId === id))
-    .filter(Boolean),
-)
-
-const visibleRecommendReasons = computed(() =>
-  Object.values(recommendReasons.value || {})
-    .flat()
-    .filter(Boolean)
-    .slice(0, 4),
-)
-
-const recommendationTitle = computed(() => {
-  if (recommendedActivities.value.length) {
-    return 'AI 正在根据你的画像推送更合适的校园活动'
-  }
-  return '登录后可获得 AI 个性化推荐'
-})
-
-const recommendationSummary = computed(() => {
-  if (recommendedActivities.value.length) {
-    return `当前已命中 ${recommendedActivities.value.length} 条推荐活动，可继续进入专题页或详情页查看。`
-  }
-  return '未登录时仍可先浏览主题入口；登录后系统会结合兴趣标签、专业年级和学分缺口进行推荐。'
-})
 
 const jumpTopic = (entry) => {
   if (entry.type === 'home') {
@@ -236,10 +193,6 @@ const jumpTopic = (entry) => {
 }
 
 const jumpFeature = (slug) => {
-  if (slug === 'recommend') {
-    router.push({ name: 'search', query: { q: 'AI 推荐' } })
-    return
-  }
   router.push({ name: 'section', params: { slug } })
 }
 
@@ -257,29 +210,7 @@ const loadHomeData = async () => {
   teamCards.value = teamPage.records || []
 }
 
-const loadRecommendations = async () => {
-  if (!user.value?.userId) {
-    recommendIds.value = []
-    recommendReasons.value = {}
-    return
-  }
-
-  const result = await recommendationApi.query({
-    userId: user.value.userId,
-    grade: user.value.grade || '未知',
-    major: user.value.major || '未知',
-    interestTagIds: [],
-    creditGap: 2,
-    availableTimeSlots: ['周三晚上', '周末白天'],
-    limit: 6,
-  })
-
-  recommendIds.value = result.recommendedActivityIds || []
-  recommendReasons.value = result.reasonTags || {}
-}
-
 onMounted(async () => {
   await loadHomeData()
-  await loadRecommendations()
 })
 </script>

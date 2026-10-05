@@ -183,6 +183,7 @@ const loadCredits = async () => {
   if (isAdminOrTeacher.value) {
     ownActivities.value = (await activityApi.list({ pageNo: 0, pageSize: 200, activityType: 1 })).records || []
   } else {
+    // publisherUserId 是"按发布者筛选活动"的查询条件，不是身份声明，因此保留。
     ownActivities.value = (await activityApi.list({
       pageNo: 0,
       pageSize: 200,
@@ -203,8 +204,9 @@ const loadCredits = async () => {
 }
 
 const reviewRecord = async (record, verifyStatus, reason = '') => {
+  // 不再传 verifyUserId：审核人由后端从 JWT 取，
+  // 并自行判定"是不是管理员/老师/该活动发布者"，前端无从伪造。
   await creditApi.review(record.recordId, {
-    verifyUserId: user.value.userId,
     verifyStatus,
     rejectReason: reason,
   })

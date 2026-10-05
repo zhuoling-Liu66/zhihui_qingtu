@@ -51,17 +51,20 @@ const state = {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+/** 本地会话在 localStorage 里的键名。抽成常量，避免多处硬编码字符串写不一致。 */
+const STORAGE_KEY = "zhihuiqingtu-current-user";
+
 function loadCurrentUser() {
-  const raw = localStorage.getItem("zhihuiqingtu-current-user");
+  const raw = localStorage.getItem(STORAGE_KEY);
   return raw ? JSON.parse(raw) : null;
 }
 
 function saveCurrentUser(user) {
   state.currentUser = user;
   if (user) {
-    localStorage.setItem("zhihuiqingtu-current-user", JSON.stringify(user));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
   } else {
-    localStorage.removeItem("zhihuiqingtu-current-user");
+    localStorage.removeItem(STORAGE_KEY);
   }
   renderCurrentUser();
 }
@@ -92,13 +95,6 @@ function parseIds(value) {
     .split(",")
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isFinite(item) && item > 0);
-}
-
-function parseTimeSlots(value) {
-  return (value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 function parseDecimal(value) {
@@ -152,9 +148,25 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   };
+  // 带上 JWT。后端已迁移到 Spring Security 的 OAuth2 Resource Server，
+  // 它从标准的 Authorization: Bearer <token> 取令牌；
+  // 不带这个头的话所有受保护接口都会 401（登录接口除外，所以登录看起来是好的）。
+  const token = state.currentUser && state.currentUser.token;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    // 调试提示：没有 token 时受保护接口必然 401，早点在控制台说明白，
+    // 免得又出现"登录成功了但页面全空"这种难排查的现象。
+    console.debug("[api] 当前没有 token，受保护接口会返回 401：", path);
+  }
   const response = await fetch(path, config);
   const payload = await response.json();
   if (!response.ok || payload.code !== 0) {
+    // 401 说明凭证失效，清掉本地会话，避免用户卡在"看起来已登录但什么都做不了"的状态
+    if (response.status === 401) {
+      state.currentUser = null;
+      localStorage.removeItem(STORAGE_KEY);
+    }
     throw new Error(payload.message || "请求失败");
   }
   return payload.data;
@@ -207,7 +219,7 @@ function renderTagBoards() {
         .join("")
     : "";
 
-  ["#activity-tag-board", "#interest-tag-board", "#recommend-tag-board"].forEach((selector) => {
+  ["#activity-tag-board", "#interest-tag-board"].forEach((selector) => {
     const board = $(selector);
     if (!board) {
       return;
@@ -460,14 +472,11 @@ function bindActivities() {
   $("#activity-create-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const user = ensureCurrentUser();
       const form = new FormData(event.target);
+      // 不再传 publisherUserId：发布者由后端从 JWT 取当前登录用户
       const created = await api("/api/activities", {
         method: "POST",
-        body: JSON.stringify({
-          publisherUserId: user.userId,
-          ...buildCreateActivityPayload(form),
-        }),
+        body: JSON.stringify(buildCreateActivityPayload(form)),
       });
       event.target.reset();
       updateActivityCreateFields();
@@ -481,12 +490,11 @@ function bindActivities() {
   $("#activity-status-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const user = ensureCurrentUser();
       const form = new FormData(event.target);
+      // 不再传 operatorUserId：操作者由后端从 JWT 取，并自行判定管理权限
       await api(`/api/activities/${form.get("activityId")}/status`, {
         method: "PATCH",
         body: JSON.stringify({
-          operatorUserId: user.userId,
           activityStatus: Number(form.get("activityStatus")),
         }),
       });
@@ -500,11 +508,9 @@ function bindActivities() {
   $("#activity-delete-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const user = ensureCurrentUser();
       const activityId = new FormData(event.target).get("activityId");
-      await api(`/api/activities/${activityId}?operatorUserId=${encodeURIComponent(user.userId)}`, {
-        method: "DELETE",
-      });
+      // 不再传 operatorUserId 查询参数：身份由后端从 JWT 推导
+      await api(`/api/activities/${activityId}`, { method: "DELETE" });
       event.target.reset();
       await loadActivities();
       showMessage(`活动 ${activityId} 已删除`);
@@ -525,10 +531,10 @@ function bindActivities() {
 
 async function loadEnrollments() {
   if (!state.currentUser) return;
-  const user = ensureCurrentUser();
   const form = new FormData($("#enrollment-query-form"));
   const params = new URLSearchParams();
-  params.set("userId", user.userId);
+  // 不再传 userId：后端强制只返回当前登录用户自己的报名记录，
+  // 客户端指定别人的学号也不会生效（后端已不接收该过滤条件）
   form.forEach((value, key) => value && params.append(key, value));
   const data = await api(`/api/enrollments?${params.toString()}`);
   renderList($("#enrollment-list"), data.records || [], (item) => `
@@ -544,11 +550,11 @@ function bindEnrollments() {
   $("#enroll-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const user = ensureCurrentUser();
       const activityId = Number(new FormData(event.target).get("activityId"));
+      // 不再传 userId：报名人由后端从 JWT 取
       await api("/api/enrollments", {
         method: "POST",
-        body: JSON.stringify({ userId: user.userId, activityId }),
+        body: JSON.stringify({ activityId }),
       });
       await loadEnrollments();
       showMessage("报名成功");
@@ -557,15 +563,18 @@ function bindEnrollments() {
     }
   });
 
+  // ⚠️ 已知不一致：后端【没有】PATCH /api/enrollments/{id}/review 这个接口
+  //（EnrollmentController 只有 sign-in 和 feedback）。
+  // 这个表单在修复前也一直是失败的（会命中 4040 或 5000），属于历史遗留，
+  // 不是本次鉴权迁移引入的问题。保留原样以免误删你可能想实现的报名审核功能，
+  // 但**不要**以为它能用。要真正实现它需要在后端补接口 + 状态机。
   $("#enroll-review-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const user = ensureCurrentUser();
       const form = new FormData(event.target);
       await api(`/api/enrollments/${form.get("enrollId")}/review`, {
         method: "PATCH",
         body: JSON.stringify({
-          reviewUserId: user.userId,
           enrollStatus: Number(form.get("enrollStatus")),
         }),
       });
@@ -649,13 +658,12 @@ function bindTeams() {
   $("#team-create-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const user = ensureCurrentUser();
       const form = new FormData(event.target);
+      // 不再传 leaderUserId：队长 = 当前登录用户，后端从 JWT 取
       await api("/api/teams", {
         method: "POST",
         body: JSON.stringify({
           activityId: form.get("activityId") ? Number(form.get("activityId")) : null,
-          leaderUserId: user.userId,
           teamName: form.get("teamName"),
           teamDesc: form.get("teamDesc"),
           maxSize: Number(form.get("maxSize")),
@@ -671,12 +679,11 @@ function bindTeams() {
   $("#team-review-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const user = ensureCurrentUser();
       const form = new FormData(event.target);
+      // 不再传 leaderUserId：后端用"当前登录用户是不是该队队长"判定审批权
       await api(`/api/teams/${form.get("teamId")}/members/${form.get("memberId")}/review`, {
         method: "PATCH",
         body: JSON.stringify({
-          leaderUserId: user.userId,
           memberStatus: Number(form.get("memberStatus")),
         }),
       });
@@ -700,10 +707,10 @@ function bindTeams() {
     const teamId = prompt("请输入要加入的队伍ID");
     if (!teamId) return;
     try {
-      const user = ensureCurrentUser();
+      // 不再传 userId：申请人 = 当前登录用户
       await api(`/api/teams/${teamId}/join`, {
         method: "POST",
-        body: JSON.stringify({ userId: user.userId }),
+        body: JSON.stringify({}),
       });
       await loadTeams();
       showMessage("入队申请已提交");
@@ -717,10 +724,10 @@ function bindTeams() {
     const memberId = prompt("请输入成员记录ID");
     if (!teamId || !memberId) return;
     try {
-      const user = ensureCurrentUser();
+      // 不再传 operatorUserId：后端从 JWT 取身份，再校验"是你自己还是队长"
       await api(`/api/teams/${teamId}/members/${memberId}/exit`, {
         method: "PATCH",
-        body: JSON.stringify({ operatorUserId: user.userId }),
+        body: JSON.stringify({}),
       });
       await loadTeams();
       showMessage("已退出队伍");
@@ -733,10 +740,10 @@ function bindTeams() {
     const teamId = prompt("请输入要解散的队伍ID");
     if (!teamId) return;
     try {
-      const user = ensureCurrentUser();
+      // 不再传 operatorUserId：仅队长可解散，由后端判定
       await api(`/api/teams/${teamId}/dismiss`, {
         method: "PATCH",
-        body: JSON.stringify({ operatorUserId: user.userId }),
+        body: JSON.stringify({}),
       });
       await loadTeams();
       showMessage("队伍已解散");
@@ -748,10 +755,10 @@ function bindTeams() {
 
 async function loadCredits() {
   if (!state.currentUser) return;
-  const user = ensureCurrentUser();
   const form = new FormData($("#credit-query-form"));
   const params = new URLSearchParams();
-  params.set("userId", user.userId);
+  // 不再传 userId：后端按角色决定可见范围（普通用户只能看自己，管理员/老师可看全部），
+  // 客户端指定学号不会绕过这个判定
   form.forEach((value, key) => value && params.append(key, value));
   const data = await api(`/api/credits?${params.toString()}`);
   renderList($("#credit-list"), data.records || [], (item) => `
@@ -765,8 +772,8 @@ async function loadCredits() {
 
 async function loadCreditStatistics() {
   if (!state.currentUser) return;
-  const user = ensureCurrentUser();
-  const data = await api(`/api/credits/statistics?userId=${encodeURIComponent(user.userId)}`);
+  // 不再传 userId：后端按角色决定"能统计谁"（普通用户只能统计自己）
+  const data = await api("/api/credits/statistics");
   renderKeyValueBoard($("#credit-statistics"), {
     总学分: data.totalCredit,
     创新创业: data.innovationEntrepreneurshipCredit,
@@ -791,12 +798,12 @@ function bindCredits() {
   $("#credit-review-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const user = ensureCurrentUser();
       const form = new FormData(event.target);
+      // 不再传 verifyUserId：审核人由后端从 JWT 取，
+      // 并自行判定"是不是管理员/老师/该活动发布者"
       await api(`/api/credits/${form.get("recordId")}/review`, {
         method: "PATCH",
         body: JSON.stringify({
-          verifyUserId: user.userId,
           verifyStatus: Number(form.get("verifyStatus")),
           rejectReason: form.get("rejectReason"),
         }),
@@ -819,56 +826,6 @@ function bindCredits() {
   });
 }
 
-function bindRecommendation() {
-  $("#recommend-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    try {
-      const user = ensureCurrentUser();
-      const form = new FormData(event.target);
-      const data = await api("/api/recommendations/query", {
-        method: "POST",
-        body: JSON.stringify({
-          userId: user.userId,
-          grade: form.get("grade"),
-          major: form.get("major"),
-          interestTagIds: parseIds(form.get("interestTagIds")),
-          creditGap: Number(form.get("creditGap") || 0),
-          availableTimeSlots: parseTimeSlots(form.get("availableTimeSlots")),
-          limit: Number(form.get("limit") || 10),
-        }),
-      });
-      renderKeyValueBoard($("#recommend-result"), {
-        "推荐活动 ID": data.recommendedActivityIds || [],
-        分数字典: data.scores || {},
-        推荐理由: data.reasonTags || {},
-      });
-      showMessage("推荐请求已完成");
-    } catch (error) {
-      showMessage(error.message, "error");
-    }
-  });
-
-  $("#recommend-log-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    try {
-      const user = ensureCurrentUser();
-      const form = new FormData(event.target);
-      await api("/api/recommendations/logs", {
-        method: "POST",
-        body: JSON.stringify({
-          userId: user.userId,
-          activityId: Number(form.get("activityId")),
-          isClick: Number(form.get("isClick")),
-          isEnroll: Number(form.get("isEnroll")),
-        }),
-      });
-      showMessage("推荐日志记录成功");
-    } catch (error) {
-      showMessage(error.message, "error");
-    }
-  });
-}
-
 async function bootstrap() {
   bindNav();
   bindAuth();
@@ -877,7 +834,6 @@ async function bootstrap() {
   bindEnrollments();
   bindTeams();
   bindCredits();
-  bindRecommendation();
   renderCurrentUser();
 
   try {

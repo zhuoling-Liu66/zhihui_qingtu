@@ -67,11 +67,13 @@ public interface ActivityService {
 
     /**
      * 删除活动。
+     * <p>
+     * 操作者取自当前登录身份（Spring Security 上下文），不接受参数传入 ——
+     * 否则调用方可以传任意学号来越权删除。
      *
-     * @param activityId      活动主键
-     * @param operatorUserId  操作者学号/工号
+     * @param activityId 活动主键
      */
-    void deleteActivity(Long activityId, String operatorUserId);
+    void deleteActivity(Long activityId);
 
     /**
      * 分页查询活动列表。
@@ -99,7 +101,7 @@ public interface ActivityService {
     /**
      * 查询热门活动榜（按累计报名人数降序）。
      * <p>
-     * 数据源是 Redis ZSet {@code activity:hot:enroll}，只存 activityId，需要回表补详情。
+     * 数据源是 Redis ZSet {@code activity:hot:enroll}，只存 activityId，需要回表，补详情。
      * 榜单为空时返回空列表，<b>不报错</b> —— "还没有热门活动"是正常状态。
      *
      * @param limit 返回条数，1~50

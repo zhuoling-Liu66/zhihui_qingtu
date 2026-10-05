@@ -20,6 +20,7 @@ import com.example.zhihuiqingtu.repository.ActivityMainRepository;
 import com.example.zhihuiqingtu.repository.TeamMainRepository;
 import com.example.zhihuiqingtu.repository.TeamMemberRepository;
 import com.example.zhihuiqingtu.repository.UserInfoRepository;
+import com.example.zhihuiqingtu.security.CurrentUser;
 import com.example.zhihuiqingtu.service.TeamService;
 import com.example.zhihuiqingtu.vo.team.TeamMemberVO;
 import com.example.zhihuiqingtu.vo.team.TeamResponse;
@@ -45,11 +46,23 @@ public class TeamServiceImpl implements TeamService {
     private final TeamMemberRepository teamMemberRepository;
     private final UserInfoRepository userInfoRepository;
     private final ActivityMainRepository activityMainRepository;
+    /**
+     * 当前登录用户读取入口（基于 Spring Security 的 SecurityContextHolder）。
+     * <p>
+     * 用它替代原来从请求体读 {@code leaderUserId} / {@code operatorUserId} / {@code userId} ——
+     * 那些字段是客户端自报的，任何人都能填别人的学号来冒充队长、冒充操作人，
+     * 从而建队挂到别人名下、审批他人申请、甚至解散别人的队伍。
+     */
+    private final CurrentUser currentUser;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public TeamResponse createTeam(CreateTeamRequest request) {
-        requireUser(request.getLeaderUserId());
+        // ★ 队长 = 当前登录用户（原来读 request.getLeaderUserId()，客户端自报、可伪造）
+        // 唯一可信来源是 Spring Security 认证后的 JWT（sub claim），这里取一次复用，避免重复读上下文。
+        String leaderUserId = currentUser.requireUserId();
+        // 先确认该学号在 user_info 里真实存在，避免 JWT 里的身份指向一个已删除的用户。
+        requireUser(leaderUserId);
         if (request.getActivityId() != null) {
             requireActivity(request.getActivityId());
         }
@@ -60,7 +73,7 @@ public class TeamServiceImpl implements TeamService {
         int currentSize = 1;
         TeamMain teamMain = TeamMain.builder()
                 .activityId(request.getActivityId())
-                .leaderUserId(request.getLeaderUserId())
+                .leaderUserId(leaderUserId)
                 .teamName(request.getTeamName())
                 .teamDesc(request.getTeamDesc())
                 .maxSize(request.getMaxSize())
@@ -73,7 +86,7 @@ public class TeamServiceImpl implements TeamService {
 
         TeamMember leader = TeamMember.builder()
                 .teamId(teamMain.getTeamId())
-                .userId(request.getLeaderUserId())
+                .userId(leaderUserId)
                 .memberStatus(TeamMemberStatusEnum.JOINED.getCode())
                 .joinTime(LocalDateTime.now())
                 .build();
@@ -122,7 +135,10 @@ public class TeamServiceImpl implements TeamService {
     @Transactional(rollbackFor = Exception.class)
     public TeamResponse applyJoin(Long teamId, JoinTeamRequest request) {
         TeamMain teamMain = requireTeam(teamId);
-        requireUser(request.getUserId());
+        // ★ 申请人 = 当前登录用户（原来读 request.getUserId()，客户端自报、可伪造）
+        // 否则填别人的学号就能替别人提交入队申请，冒充他人并污染队伍成员列表。
+        String applicantId = currentUser.requireUserId();
+        requireUser(applicantId);
         if (TeamStatusEnum.DISMISSED.getCode().equals(teamMain.getTeamStatus())) {
             throw new BusinessException(4302, "队伍已解散，无法加入");
         }
@@ -131,12 +147,12 @@ public class TeamServiceImpl implements TeamService {
         }
         if (teamMemberRepository.selectCount(new LambdaQueryWrapper<TeamMember>()
                 .eq(TeamMember::getTeamId, teamId)
-                .eq(TeamMember::getUserId, request.getUserId())) > 0) {
+                .eq(TeamMember::getUserId, applicantId)) > 0) {
             throw new BusinessException(4303, "当前用户已在队伍中或申请待审核");
         }
         TeamMember teamMember = TeamMember.builder()
                 .teamId(teamId)
-                .userId(request.getUserId())
+                .userId(applicantId)
                 .memberStatus(TeamMemberStatusEnum.PENDING.getCode())
                 .build();
         teamMemberRepository.insert(teamMember);
@@ -147,7 +163,10 @@ public class TeamServiceImpl implements TeamService {
     @Transactional(rollbackFor = Exception.class)
     public TeamResponse reviewMember(Long teamId, Long memberId, ReviewTeamMemberRequest request) {
         TeamMain teamMain = requireTeam(teamId);
-        if (!teamMain.getLeaderUserId().equals(request.getLeaderUserId())) {
+        // ★ 审核人 = 当前登录用户（原来读 request.getLeaderUserId()，客户端自报、可伪造）
+        // 归属/权限校验逻辑本身不变，只是把"请求体说的队长"换成"JWT 证明的当前用户"：
+        // 原来任何人填上队长的学号就能审批队员申请。
+        if (!teamMain.getLeaderUserId().equals(currentUser.requireUserId())) {
             throw new BusinessException(4304, "仅队长可审核成员申请");
         }
         TeamMember teamMember = requireTeamMember(memberId);
@@ -187,8 +206,12 @@ public class TeamServiceImpl implements TeamService {
         if (!teamMain.getTeamId().equals(teamMember.getTeamId())) {
             throw new BusinessException(4309, "成员不属于当前队伍");
         }
-        if (!request.getOperatorUserId().equals(teamMember.getUserId())
-                && !request.getOperatorUserId().equals(teamMain.getLeaderUserId())) {
+        // ★ 操作人 = 当前登录用户（原来读 request.getOperatorUserId()，客户端自报、可伪造）
+        // "本人或队长可以退出"这条规则保留，但判断依据换成 JWT 证明的身份：
+        // 原来只要填上队长的学号，任何登录用户都能把别的队员移出队伍。
+        String operatorUserId = currentUser.requireUserId();
+        if (!operatorUserId.equals(teamMember.getUserId())
+                && !operatorUserId.equals(teamMain.getLeaderUserId())) {
             throw new BusinessException(4310, "仅本人或队长可以执行退出操作");
         }
         if (teamMain.getLeaderUserId().equals(teamMember.getUserId())) {
@@ -210,7 +233,9 @@ public class TeamServiceImpl implements TeamService {
     @Transactional(rollbackFor = Exception.class)
     public TeamResponse dismissTeam(Long teamId, DismissTeamRequest request) {
         TeamMain teamMain = requireTeam(teamId);
-        if (!teamMain.getLeaderUserId().equals(request.getOperatorUserId())) {
+        // ★ 操作人 = 当前登录用户（原来读 request.getOperatorUserId()，客户端自报、可伪造）
+        // 解散会把该队全部成员记录逻辑删除，是可破坏性操作：原来填上队长学号即可解散别人的队伍。
+        if (!teamMain.getLeaderUserId().equals(currentUser.requireUserId())) {
             throw new BusinessException(4313, "仅队长可以解散队伍");
         }
         teamMain.setTeamStatus(TeamStatusEnum.DISMISSED.getCode());

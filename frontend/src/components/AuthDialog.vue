@@ -9,7 +9,7 @@
     <template #header>
       <div class="auth-dialog__header">
         <h3>进入校园活动集市</h3>
-        <p>登录后即可报名活动、发布内容、查看 AI 推荐和个人学分。</p>
+        <p>登录后即可报名活动、发布内容和查看个人学分。</p>
       </div>
     </template>
 

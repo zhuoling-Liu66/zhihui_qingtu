@@ -38,8 +38,12 @@ public class TeamController {
 
     /**
      * 创建队伍。
+     * <p>
+     * 不再需要请求体里的 {@code leaderUserId}：队长就是当前登录用户，
+     * 身份由 Spring Security 从 JWT 解析、服务层通过 {@code CurrentUser} 读取。
+     * 少一个可伪造的入参，就少一处"把队伍挂到别人名下"的越权面。
      *
-     * @param request 创建队伍请求体
+     * @param request 创建队伍请求体（不含身份字段）
      * @return 创建后的队伍详情
      */
     @PostMapping
@@ -71,9 +75,12 @@ public class TeamController {
 
     /**
      * 申请加入队伍。
+     * <p>
+     * 不再需要请求体里的 {@code userId}：申请人就是当前登录用户，
+     * 由服务层从 Spring Security 上下文读取。原来客户端可以填别人的学号替他人申请。
      *
      * @param teamId  队伍主键
-     * @param request 入队申请参数
+     * @param request 入队申请参数（不含身份字段）
      * @return 最新队伍详情
      */
     @PostMapping("/{teamId}/join")
@@ -85,10 +92,13 @@ public class TeamController {
 
     /**
      * 审核队员申请。
+     * <p>
+     * 不再需要请求体里的 {@code leaderUserId}：审核人就是当前登录用户，
+     * "是否队长"的归属校验在服务层用真实身份与队伍记录比较，逻辑不变、依据变可信。
      *
      * @param teamId   队伍主键
      * @param memberId 队员记录主键
-     * @param request  审核请求体
+     * @param request  审核请求体（只剩 memberStatus）
      * @return 最新队伍详情
      */
     @PatchMapping("/{teamId}/members/{memberId}/review")
@@ -101,10 +111,13 @@ public class TeamController {
 
     /**
      * 队员退出队伍。
+     * <p>
+     * 不再需要请求体里的 {@code operatorUserId}：操作人就是当前登录用户。
+     * "本人或队长可退出"的规则保留，但判断依据换成 JWT 证明的身份。
      *
      * @param teamId   队伍主键
      * @param memberId 队员记录主键
-     * @param request  退出请求体
+     * @param request  退出请求体（已无入参字段，请求体可为 {@code {}}）
      * @return 最新队伍详情
      */
     @PatchMapping("/{teamId}/members/{memberId}/exit")
@@ -117,9 +130,13 @@ public class TeamController {
 
     /**
      * 解散队伍。
+     * <p>
+     * 不再需要请求体里的 {@code operatorUserId}：操作人就是当前登录用户。
+     * 解散是破坏性操作（会逻辑删除全队成员记录），原来填上队长学号即可解散他人队伍，
+     * 现在必须由 JWT 证明的队长本人发起。
      *
      * @param teamId  队伍主键
-     * @param request 解散请求体
+     * @param request 解散请求体（已无入参字段，请求体可为 {@code {}}）
      * @return 最新队伍详情
      */
     @PatchMapping("/{teamId}/dismiss")

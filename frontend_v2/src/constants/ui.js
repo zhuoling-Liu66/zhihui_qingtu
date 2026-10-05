@@ -239,14 +239,6 @@ export const featureModules = [
     stat: '运动与团建并行',
     slug: 'team',
   },
-  {
-    title: 'AI 推荐',
-    subtitle: '猜你喜欢、兴趣标签、画像匹配',
-    badge: '智能推荐',
-    accent: 'pink',
-    stat: '推荐接口预留',
-    slug: 'recommend',
-  },
 ]
 
 export const creditTypeMap = {

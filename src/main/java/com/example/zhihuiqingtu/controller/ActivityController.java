@@ -14,17 +14,7 @@ import com.example.zhihuiqingtu.vo.activity.ActivityStockResponse;
 import com.example.zhihuiqingtu.vo.activity.ActivityTagVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -92,7 +82,8 @@ public class ActivityController {
     public ApiResponse<ActivityResponse> changeActivityStatus(
             @PathVariable Long activityId,
             @Valid @RequestBody ChangeActivityStatusRequest request) {
-        return ApiResponse.success("活动状态更新成功", activityService.changeActivityStatus(activityId, request));
+        return ApiResponse.success("活动状态更新成功",
+                activityService.changeActivityStatus(activityId, request));
     }
 
     /**
@@ -111,16 +102,16 @@ public class ActivityController {
 
     /**
      * 删除活动。
+     * <p>
+     * 不再需要 {@code operatorUserId} 查询参数：操作者身份由 Spring Security 从 JWT 解析，
+     * 服务层通过 {@code CurrentUser} 读取。少一个可伪造的入参，就少一处越权面。
      *
-     * @param activityId      活动主键
-     * @param operatorUserId  执行删除的用户学号/工号
+     * @param activityId 活动主键
      * @return 空响应体
      */
     @DeleteMapping("/{activityId}")
-    public ApiResponse<Void> deleteActivity(
-            @PathVariable Long activityId,
-            @RequestParam String operatorUserId) {
-        activityService.deleteActivity(activityId, operatorUserId);
+    public ApiResponse<Void> deleteActivity(@PathVariable Long activityId) {
+        activityService.deleteActivity(activityId);
         return ApiResponse.success("活动删除成功", null);
     }
 

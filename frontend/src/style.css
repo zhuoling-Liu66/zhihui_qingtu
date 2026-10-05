@@ -764,10 +764,6 @@ textarea {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(200, 75, 49, 0.08));
 }
 
-.hero-module--ai {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(45, 66, 99, 0.06));
-}
-
 .hero-module__copy {
   position: relative;
   display: flex;
@@ -928,7 +924,7 @@ textarea {
 
 .recommend-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 
@@ -950,11 +946,6 @@ textarea {
   color: var(--charcoal);
 }
 
-.recommend-card--ai {
-  background: linear-gradient(180deg, #ffffff, rgba(236, 219, 186, 0.54));
-  color: var(--ink);
-}
-
 .recommend-card--credit {
   background: linear-gradient(180deg, #ffffff, rgba(236, 219, 186, 0.68));
 }
@@ -968,14 +959,6 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
-}
-
-.recommend-card__handnote {
-  display: inline-flex;
-  margin-top: 10px;
-  color: var(--brand);
-  font-family: "Ma Shan Zheng", "KaiTi", cursive;
-  font-size: 16px;
 }
 
 .recommend-card__chips span {

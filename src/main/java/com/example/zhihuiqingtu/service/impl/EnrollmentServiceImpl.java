@@ -19,6 +19,7 @@ import com.example.zhihuiqingtu.repository.ActivityEnrollRepository;
 import com.example.zhihuiqingtu.repository.ActivityMainRepository;
 import com.example.zhihuiqingtu.repository.CreditRecordRepository;
 import com.example.zhihuiqingtu.repository.UserInfoRepository;
+import com.example.zhihuiqingtu.security.CurrentUser;
 import com.example.zhihuiqingtu.service.EnrollmentService;
 import com.example.zhihuiqingtu.vo.enrollment.EnrollmentResponse;
 import lombok.RequiredArgsConstructor;
@@ -46,11 +47,23 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     private final ActivityCacheService activityCacheService;
     /** 热门活动榜（Redis ZSet）。 */
     private final HotActivityService hotActivityService;
+    /**
+     * 当前登录用户读取入口（基于 Spring Security 的 SecurityContextHolder）。
+     * <p>
+     * 用它替代原来从请求体/请求参数读 userId —— 那些值是客户端自报的，
+     * 任何人都能填别人的学号，以别人的名义报名、取消、签到、评价，
+     * 或者查出全平台的报名数据。身份只有服务端从 JWT 解析出来的才可信。
+     */
+    private final CurrentUser currentUser;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public EnrollmentResponse createEnrollment(CreateEnrollmentRequest request) {
-        requireUser(request.getUserId());
+        // ★ 报名人 = 当前登录用户，不再读 request.getUserId()
+        // 原写法 requireUser(request.getUserId()) 只是"校验这个学号存在"，
+        // 并不校验"这个学号是不是你"，所以伪造别人的学号可以照样通过。
+        String currentUserId = currentUser.requireUserId();
+        requireUser(currentUserId);
         ActivityMain activityMain = requireActivity(request.getActivityId());
         if (!ActivityStatusEnum.PUBLISHED.getCode().equals(activityMain.getActivityStatus())) {
             throw new BusinessException(4201, "当前活动不可报名");
@@ -58,8 +71,10 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         if (ActivityStatusEnum.FINISHED.getCode().equals(resolveDisplayStatus(activityMain))) {
             throw new BusinessException(4202, "已结束活动不可报名");
         }
+        // 查重也改用当前登录学号：否则攻击者可以拿别人的学号来试探"某人是否已报名"，
+        // 而且查重对象与实际写入的人不一致时会漏判/误判。
         if (activityEnrollRepository.selectCount(new LambdaQueryWrapper<ActivityEnroll>()
-                .eq(ActivityEnroll::getUserId, request.getUserId())
+                .eq(ActivityEnroll::getUserId, currentUserId)
                 .eq(ActivityEnroll::getActivityId, request.getActivityId())) > 0) {
             throw new BusinessException(4204, "请勿重复报名");
         }
@@ -99,7 +114,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         ActivityEnroll enrollment = ActivityEnroll.builder()
-                .userId(request.getUserId())
+                .userId(currentUserId)
                 .activityId(request.getActivityId())
                 .enrollStatus(EnrollmentStatusEnum.ENROLLED.getCode())
                 .build();
@@ -132,9 +147,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public EnrollmentResponse cancelEnrollment(Long enrollId, String userId) {
+    public EnrollmentResponse cancelEnrollment(Long enrollId) {
         ActivityEnroll enrollment = requireEnrollment(enrollId);
-        if (!enrollment.getUserId().equals(userId)) {
+        // ★ 操作者 = 当前登录用户。归属校验保留，但比较对象换成真实身份：
+        // 原来 userId 是 @RequestParam 传进来的，攻击者只要把 userId 填成记录归属人就能取消别人的报名。
+        // 现在这个值来自 JWT，改不了，才是真正的"仅可退出自己"。
+        if (!enrollment.getUserId().equals(currentUser.requireUserId())) {
             throw new BusinessException(4205, "仅可退出自己的活动报名记录");
         }
 
@@ -165,9 +183,11 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public EnrollmentResponse signIn(Long enrollId, String userId) {
+    public EnrollmentResponse signIn(Long enrollId) {
         ActivityEnroll enrollment = requireEnrollment(enrollId);
-        if (!enrollment.getUserId().equals(userId)) {
+        // ★ 签到人 = 当前登录用户，不再读请求参数里的 userId。
+        // 签到会写签到时间并触发学分记录生成，若身份可伪造，就能替别人刷签到、刷学分。
+        if (!enrollment.getUserId().equals(currentUser.requireUserId())) {
             throw new BusinessException(4208, "仅可签到自己的活动报名记录");
         }
         if (!EnrollmentStatusEnum.ENROLLED.getCode().equals(enrollment.getEnrollStatus())) {
@@ -196,7 +216,9 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional(rollbackFor = Exception.class)
     public EnrollmentResponse feedback(Long enrollId, FeedbackEnrollmentRequest request) {
         ActivityEnroll enrollment = requireEnrollment(enrollId);
-        if (!enrollment.getUserId().equals(request.getUserId())) {
+        // ★ 评价人 = 当前登录用户，不再读 request.getUserId()
+        // 原写法允许把 userId 填成记录归属人，从而替别人提交评价（篡改他人的活动评分）。
+        if (!enrollment.getUserId().equals(currentUser.requireUserId())) {
             throw new BusinessException(4213, "仅可评价自己的活动记录");
         }
         if (enrollment.getSignInTime() == null
@@ -212,8 +234,13 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
     @Override
     public PageResponse<EnrollmentResponse> queryEnrollments(EnrollmentQueryRequest request) {
+        // ★ 过滤条件 = 当前登录学号，无条件加上，而不是"请求里传了才过滤"。
+        // 原来的 .eq(request.getUserId() != null, ...) 两个问题：
+        //   ① 不传 userId 时条件被跳过 → 一次请求就能拉走全平台的报名数据（越权读取）；
+        //   ② 传别人的 userId → 直接查看他人的报名记录。
+        // 现在身份来自 JWT，用户只能看到自己的报名记录，activityId / enrollStatus 仍可自由组合过滤。
         LambdaQueryWrapper<ActivityEnroll> queryWrapper = new LambdaQueryWrapper<ActivityEnroll>()
-                .eq(request.getUserId() != null, ActivityEnroll::getUserId, request.getUserId())
+                .eq(ActivityEnroll::getUserId, currentUser.requireUserId())
                 .eq(request.getActivityId() != null, ActivityEnroll::getActivityId, request.getActivityId())
                 .eq(request.getEnrollStatus() != null, ActivityEnroll::getEnrollStatus, request.getEnrollStatus())
                 .orderByDesc(ActivityEnroll::getCreateTime);

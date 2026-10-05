@@ -148,13 +148,15 @@ const loadEnrollments = async () => {
 }
 
 const handleSignIn = async (item) => {
-  await enrollApi.signIn(item.enrollId, user.value.userId)
+  // 不再传 userId：后端从 JWT 取当前登录用户，并按归属校验这条报名记录是不是你的
+  await enrollApi.signIn(item.enrollId)
   ElMessage.success('签到成功，活动已完成')
   await loadEnrollments()
 }
 
 const handleCancel = async (item) => {
-  await enrollApi.cancel(item.enrollId, user.value.userId)
+  // 同上：身份由后端推导，"能取消"这件事由服务端说了算，前端传什么都不影响
+  await enrollApi.cancel(item.enrollId)
   ElMessage.success('已退出活动')
   await loadEnrollments()
 }

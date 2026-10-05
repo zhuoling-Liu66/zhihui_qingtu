@@ -7,6 +7,7 @@ import com.example.zhihuiqingtu.dto.auth.LoginRequest;
 import com.example.zhihuiqingtu.dto.auth.RegisterRequest;
 import com.example.zhihuiqingtu.entity.UserInfo;
 import com.example.zhihuiqingtu.enums.PublisherStatusEnum;
+import com.example.zhihuiqingtu.enums.UserRoleEnum;
 import com.example.zhihuiqingtu.exception.BusinessException;
 import com.example.zhihuiqingtu.repository.UserInfoRepository;
 import com.example.zhihuiqingtu.service.AuthService;
@@ -15,6 +16,7 @@ import com.example.zhihuiqingtu.vo.user.UserProfileResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,13 +63,14 @@ public class AuthServiceImpl implements AuthService {
      */
     private final StringRedisTemplate stringRedisTemplate;
     /**
-     * 令牌黑名单。登出时把当前令牌的 jti 记进去，拦截器每次校验时查一次。
+     * 令牌黑名单。登出时把当前令牌的 jti 写进去，
+     * 之后由框架的令牌校验器（{@code JwtBlacklistValidator}）在每个请求的解码阶段检查。
      */
     private final TokenBlacklistService tokenBlacklistService;
 
     @Override
-    public void logout(String token) {
-        tokenBlacklistService.blacklist(token);
+    public void logout(Jwt jwt) {
+        tokenBlacklistService.blacklist(jwt);
     }
 
     @Override
@@ -90,7 +93,7 @@ public class AuthServiceImpl implements AuthService {
                 .userName(request.getUserName())
                 .userPhone(request.getUserPhone())
                 .userEmail(request.getUserEmail())
-                .userRole(request.getUserRole())
+                .userRole(UserRoleEnum.STUDENT.getCode())
                 .publisherStatus(PublisherStatusEnum.ENABLED.getCode())
                 .major(request.getMajor())
                 .grade(request.getGrade())

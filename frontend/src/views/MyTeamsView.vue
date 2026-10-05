@@ -79,7 +79,10 @@
 
               <div class="manage-card__switch">
                 <span>我的身份</span>
-                <strong>{{ team.leaderUserId === user.userId ? '队长' : '成员/申请中' }}</strong>
+                <!-- 用 user?.userId 而不是 user.userId：useSession() 返回的 user 是 computed，
+                     模板里会自动解包（此处可用），但脚本里必须写 .value；
+                     统一写成 user?.userId 是为了和 v2 对齐、并避免 user 为空时报错。 -->
+                <strong>{{ team.leaderUserId === user?.userId ? '队长' : '成员/申请中' }}</strong>
               </div>
 
               <div class="manage-card__actions">
@@ -87,7 +90,7 @@
                   进入详情
                 </el-button>
                 <el-button
-                  v-if="team.leaderUserId === user.userId"
+                  v-if="team.leaderUserId === user?.userId"
                   plain
                   @click="router.push({ name: 'team-detail', params: { id: team.teamId } })"
                 >
@@ -148,6 +151,7 @@ const teamStatusText = (status) => {
 const loadTeams = async () => {
   if (!user.value?.userId) return
 
+  // leaderUserId / memberUserId 是"按队长/成员筛选队伍列表"的查询条件，不是身份声明，保留。
   const [leaderPage, memberPage, activityPage] = await Promise.all([
     teamApi.list({ leaderUserId: user.value.userId, pageNo: 0, pageSize: 50 }),
     teamApi.list({ memberUserId: user.value.userId, pageNo: 0, pageSize: 50 }),
@@ -162,8 +166,8 @@ const loadTeams = async () => {
 const createTeam = async () => {
   creatingTeam.value = true
   try {
+    // 不再传 leaderUserId：队长 = 当前登录用户，后端从 JWT 取
     const created = await teamApi.create({
-      leaderUserId: user.value.userId,
       activityId: teamForm.activityId || null,
       teamName: teamForm.teamName,
       teamDesc: teamForm.teamDesc,

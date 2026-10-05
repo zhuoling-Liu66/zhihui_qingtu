@@ -114,6 +114,7 @@ const activities = ref([])
 
 const loadActivities = async () => {
   if (!user.value?.userId) return
+  // publisherUserId 是"按发布者筛选活动列表"的查询条件，不是身份声明，保留。
   const page = await activityApi.list({
     publisherUserId: user.value.userId,
     pageNo: 0,
@@ -123,8 +124,9 @@ const loadActivities = async () => {
 }
 
 const changeStatus = async (activity, status) => {
+  // 不再传 operatorUserId：操作者由后端从 JWT 取，
+  // 服务端再按"是不是这个活动的发布者/管理员"自行判定权限。
   await activityApi.updateStatus(activity.activityId, {
-    operatorUserId: user.value.userId,
     activityStatus: status,
   })
   ElMessage.success(status === 4 ? '活动已取消' : '活动已重新发布')
@@ -132,8 +134,8 @@ const changeStatus = async (activity, status) => {
 }
 
 const toggleSignIn = async (activity, value) => {
+  // 同上：不再传 operatorUserId
   await activityApi.updateSignInSwitch(activity.activityId, {
-    operatorUserId: user.value.userId,
     signInEnabled: value ? 1 : 0,
   })
   ElMessage.success(value ? '签到已开启' : '签到已关闭')
@@ -151,7 +153,8 @@ const removeActivity = async (activity) => {
     },
   )
 
-  await activityApi.remove(activity.activityId, user.value.userId)
+  // 不再传 operatorUserId（原来是 query 参数），删除者身份由后端从 JWT 取并校验归属
+  await activityApi.remove(activity.activityId)
   ElMessage.success('活动已删除')
   await loadActivities()
 }

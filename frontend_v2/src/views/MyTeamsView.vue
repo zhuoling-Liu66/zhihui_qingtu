@@ -75,7 +75,11 @@
 
               <div class="manage-card__switch">
                 <span>我的身份</span>
-                <strong>{{ team.leaderUserId === user.userId ? '队长' : '成员/申请中' }}</strong>
+                <!-- 注意用 user?.userId 而不是 user.userId：
+                     useSession() 返回的 user 是 computed（ComputedRef），
+                     在模板里自动解包，但在 <script setup> 里必须写 .value。
+                     原来写成 user.userId 恒为 undefined，导致队长也永远显示"成员/申请中"。 -->
+                <strong>{{ team.leaderUserId === user?.userId ? '队长' : '成员/申请中' }}</strong>
               </div>
 
               <div class="manage-card__actions">
@@ -83,7 +87,7 @@
                   进入详情
                 </el-button>
                 <el-button
-                  v-if="team.leaderUserId === user.userId"
+                  v-if="team.leaderUserId === user?.userId"
                   plain
                   @click="router.push({ name: 'team-detail', params: { id: team.teamId } })"
                 >
@@ -156,8 +160,8 @@ const loadTeams = async () => {
 const createTeam = async () => {
   creatingTeam.value = true
   try {
+    // 不再传 leaderUserId：队长 = 当前登录用户，后端从 JWT 取
     const created = await teamApi.create({
-      leaderUserId: user.value.userId,
       activityId: teamForm.activityId || null,
       teamName: teamForm.teamName,
       teamDesc: teamForm.teamDesc,

@@ -29,6 +29,7 @@ import com.example.zhihuiqingtu.repository.CreditRecordRepository;
 import com.example.zhihuiqingtu.repository.TeamMainRepository;
 import com.example.zhihuiqingtu.repository.TeamMemberRepository;
 import com.example.zhihuiqingtu.repository.UserInfoRepository;
+import com.example.zhihuiqingtu.security.CurrentUser;
 import com.example.zhihuiqingtu.service.ActivityService;
 import com.example.zhihuiqingtu.vo.activity.ActivityCoverUploadResponse;
 import com.example.zhihuiqingtu.vo.activity.ActivityResponse;
@@ -82,6 +83,13 @@ public class ActivityServiceImpl implements ActivityService {
     private final ActivityStockService activityStockService;
     /** 热门活动榜（Redis ZSet）。 */
     private final HotActivityService hotActivityService;
+    /**
+     * 当前登录用户读取入口（基于 Spring Security 的 SecurityContextHolder）。
+     * <p>
+     * 用它替代原来从请求体读 {@code publisherUserId} / {@code operatorUserId} ——
+     * 那些字段是客户端自报的，任何人都能填别人的学号来越权。
+     */
+    private final CurrentUser currentUser;
 
     @Override
     public ActivityCoverUploadResponse uploadActivityCover(MultipartFile file) {
@@ -120,7 +128,9 @@ public class ActivityServiceImpl implements ActivityService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ActivityResponse createActivity(CreateActivityRequest request) {
-        UserInfo publisher = requireUser(request.getPublisherUserId());
+        // ★ 发布者 = 当前登录用户，不再读 request.getPublisherUserId()
+        String publisherId = currentUser.requireUserId();
+        UserInfo publisher = requireUser(publisherId);
         checkPublishPermission(publisher);
         validateActivityTime(request.getStartTime(), request.getEndTime());
         validateTags(request.getTagIds());
@@ -132,7 +142,7 @@ public class ActivityServiceImpl implements ActivityService {
         );
 
         ActivityMain activityMain = ActivityMain.builder()
-                .publisherUserId(request.getPublisherUserId())
+                .publisherUserId(publisherId)
                 .activityTitle(request.getActivityTitle())
                 .activityDesc(request.getActivityDesc())
                 .activityType(request.getActivityType())
@@ -161,7 +171,8 @@ public class ActivityServiceImpl implements ActivityService {
     @Transactional(rollbackFor = Exception.class)
     public ActivityResponse updateActivity(Long activityId, UpdateActivityRequest request) {
         ActivityMain activityMain = requireActivity(activityId);
-        UserInfo operator = requireUser(request.getOperatorUserId());
+        // ★ 操作者 = 当前登录用户（原来读 request.getOperatorUserId()）
+        UserInfo operator = requireUser(currentUser.requireUserId());
         checkActivityManagePermission(activityMain, operator);
         validateActivityTime(request.getStartTime(), request.getEndTime());
         validateTags(request.getTagIds());
@@ -203,7 +214,8 @@ public class ActivityServiceImpl implements ActivityService {
     @Transactional(rollbackFor = Exception.class)
     public ActivityResponse changeActivityStatus(Long activityId, ChangeActivityStatusRequest request) {
         ActivityMain activityMain = requireActivity(activityId);
-        UserInfo operator = requireUser(request.getOperatorUserId());
+        // ★ 操作者 = 当前登录用户，不再从请求体读 operatorUserId（客户端自报，可伪造）
+        UserInfo operator = requireUser(currentUser.requireUserId());
         checkActivityManagePermission(activityMain, operator);
 
         if (!ActivityStatusEnum.isPersistentStatus(request.getActivityStatus())) {
@@ -220,7 +232,8 @@ public class ActivityServiceImpl implements ActivityService {
     @Transactional(rollbackFor = Exception.class)
     public ActivityResponse updateSignInSwitch(Long activityId, ChangeActivitySignInRequest request) {
         ActivityMain activityMain = requireActivity(activityId);
-        UserInfo operator = requireUser(request.getOperatorUserId());
+        // ★ 操作者 = 当前登录用户
+        UserInfo operator = requireUser(currentUser.requireUserId());
         checkActivityManagePermission(activityMain, operator);
 
         if (!Integer.valueOf(0).equals(request.getSignInEnabled()) && !Integer.valueOf(1).equals(request.getSignInEnabled())) {
@@ -246,9 +259,10 @@ public class ActivityServiceImpl implements ActivityService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteActivity(Long activityId, String operatorUserId) {
+    public void deleteActivity(Long activityId) {
         ActivityMain activityMain = requireActivity(activityId);
-        UserInfo operator = requireUser(operatorUserId);
+        // ★ 操作者 = 当前登录用户（原来由 @RequestParam operatorUserId 传入，可伪造）
+        UserInfo operator = requireUser(currentUser.requireUserId());
         checkActivityManagePermission(activityMain, operator);
 
         activityTagRelRepository.delete(new LambdaQueryWrapper<ActivityTagRel>()

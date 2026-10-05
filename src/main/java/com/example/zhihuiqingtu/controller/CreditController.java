@@ -35,6 +35,10 @@ public class CreditController {
 
     /**
      * 分页查询学分记录。
+     * <p>
+     * 可见范围由服务端按角色判定，客户端伪造不了：
+     * 管理员/老师可见全部并按学号筛选；学生发布者只能看自己发布的活动产生的记录；
+     * 普通学生被强制改写成"当前登录用户"，只会返回自己的学分记录。
      *
      * @param request 查询条件
      * @return 学分记录分页结果
@@ -46,6 +50,9 @@ public class CreditController {
 
     /**
      * 审核某一条学分记录。
+     * <p>
+     * 请求体里已不再有 {@code verifyUserId}：审核人 = 当前登录用户，
+     * 由服务层从 {@code CurrentUser} 读取，客户端无法指定。
      *
      * @param recordId 学分记录主键
      * @param request  审核请求体
@@ -59,13 +66,18 @@ public class CreditController {
     }
 
     /**
-     * 查询某个用户的学分统计信息。
+     * 查询学分统计信息。
+     * <p>
+     * {@code userId} 是<b>可选的目标用户</b>，不是身份：管理员/老师传它可查指定学生，
+     * 不传则查自己；普通用户传了也会被服务端忽略（强制查自己）。
+     * 也就是说这个参数只是"缩小范围"的输入，可见范围始终由 JWT 里的角色决定。
      *
-     * @param userId 用户学号/工号
+     * @param userId 目标用户学号/工号（可选；仅管理员/老师生效）
      * @return 学分统计结果
      */
     @GetMapping("/statistics")
-    public ApiResponse<CreditStatisticsResponse> getStatistics(@RequestParam String userId) {
+    public ApiResponse<CreditStatisticsResponse> getStatistics(
+            @RequestParam(required = false) String userId) {
         return ApiResponse.success(creditService.getStatistics(userId));
     }
 }

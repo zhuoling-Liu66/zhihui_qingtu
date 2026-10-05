@@ -25,7 +25,6 @@
             </div>
             <div class="detail-actions">
               <el-button type="warning" size="large" @click="handleEnroll">我要报名</el-button>
-              <el-button size="large" @click="logRecommendationClick">记录推荐点击</el-button>
             </div>
           </div>
 
@@ -99,7 +98,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CoverImage from '@/components/CoverImage.vue'
-import { activityApi, enrollApi, recommendationApi } from '@/api/platform'
+import { activityApi, enrollApi } from '@/api/platform'
 import { useSession } from '@/composables/useSession'
 import {
   formatActivityStatusByActivity,
@@ -132,34 +131,13 @@ const handleEnroll = async () => {
     return
   }
 
+  // 不再传 userId：报名人由后端从 JWT 取当前登录用户，
+  // 请求体里自报学号等于可以替别人报名占名额（可伪造）。
   await enrollApi.create({
-    userId: user.value.userId,
     activityId: activity.value.activityId,
   })
 
-  await recommendationApi.log({
-    userId: user.value.userId,
-    activityId: activity.value.activityId,
-    isClick: 1,
-    isEnroll: 1,
-  })
-
-  ElMessage.success('报名成功，已同步记录推荐日志')
-}
-
-const logRecommendationClick = async () => {
-  if (!user.value?.userId) {
-    ElMessage.warning('请先登录后记录行为')
-    return
-  }
-
-  await recommendationApi.log({
-    userId: user.value.userId,
-    activityId: activity.value.activityId,
-    isClick: 1,
-    isEnroll: 0,
-  })
-  ElMessage.success('推荐点击已记录')
+  ElMessage.success('报名成功')
 }
 
 watch(

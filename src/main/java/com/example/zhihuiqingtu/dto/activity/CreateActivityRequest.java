@@ -13,15 +13,12 @@ import java.util.List;
 
 /**
  * 创建活动请求。
+ * <p>
+ * 注意：没有"发布者"字段。发布者由服务端从 JWT 取当前登录用户
+ * （见 {@code CurrentUser}），因为身份一旦可以由客户端声明，就等于允许任意越权。
  */
 @Data
 public class CreateActivityRequest {
-
-    /**
-     * 发布者学号或工号。
-     */
-    @NotBlank(message = "发布者不能为空")
-    private String publisherUserId;
 
     /**
      * 活动标题。

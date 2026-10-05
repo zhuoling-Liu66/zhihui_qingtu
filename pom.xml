@@ -12,7 +12,7 @@
     <artifactId>zhihuiqingtu</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>zhihuiqingtu</name>
-    <description>Campus activity publishing, enrollment, credit review, and AI recommendation platform.</description>
+    <description>Campus activity publishing, enrollment, credit review, and team management platform.</description>
     <url/>
     <licenses>
         <license/>
@@ -48,9 +48,59 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!--
+            鉴权：Spring Security 过滤器链 + OAuth2 Resource Server 的 JWT 校验。
+
+            【为什么从"手写拦截器"换成这个】
+            原来用 spring-security-crypto（只拿 BCryptPasswordEncoder）+ 自己写的
+            TokenInterceptor 做鉴权。手写的问题是容易漏：原实现只做了"认证"（验签通过就放行），
+            没做"授权"（不校验"你是谁"），导致所有权限判断只能依赖请求体里客户端自报的
+            operatorUserId / userId，存在水平越权（IDOR）。
+
+            换成框架后：
+              · JWT 验签交给 NimbusJwtDecoder（不再手写 parseToken）
+              · 身份由框架写入 SecurityContextHolder，业务层只读不猜
+              · 授权用 @PreAuthorize / authorizeHttpRequests 声明式表达，不易漏
+              · 401/403 由框架统一处理
+
+            注意：spring-boot-starter-security 会【自动拦截所有请求】并启用 formLogin + httpBasic，
+            所以必须同时提供 SecurityConfig 显式放行登录/注册等路径，否则连登录都进不去。
+            另外它已传递包含 spring-security-crypto，所以下面不再单独声明后者（避免重复依赖）。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!--
+            OAuth2 Resource Server：提供 JWT 解码能力（NimbusJwtDecoder）。
+            我们不用它做完整的 OAuth2 授权服务器（那个要 spring-security-oauth2-authorization-server），
+            只用它的 JWT 校验过滤器链，正好替代手写的 TokenInterceptor。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <!-- JWT 令牌签发与解析：api 参与编译，impl 和 jackson 仅运行时需要 -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -77,6 +127,17 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!--
+            接口文档：springdoc-openapi 3.x。
+            必须用 3.x —— 2.x 是 Spring Boot 3（Framework 6）时代的，在 Boot 4 上启动即报
+            NoSuchMethodError: ControllerAdviceBean.<init>(Object)。
+            访问地址：/swagger-ui.html
+        -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>3.1.1</version>
         </dependency>
     </dependencies>
 

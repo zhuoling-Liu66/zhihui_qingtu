@@ -258,19 +258,15 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     if (isEditMode.value) {
-      const updated = await activityApi.update(editingActivityId.value, {
-        operatorUserId: user.value.userId,
-        ...buildPayload(),
-      })
+      // 不再传 operatorUserId：后端从 JWT 取当前登录用户并自行判定管理权限
+      const updated = await activityApi.update(editingActivityId.value, buildPayload())
       ElMessage.success('活动修改成功')
       router.push({ name: 'activity-detail', params: { id: updated.activityId } })
       return
     }
 
-    const created = await activityApi.create({
-      publisherUserId: user.value.userId,
-      ...buildPayload(),
-    })
+    // 不再传 publisherUserId：发布者 = 当前登录用户（由后端从 JWT 取）
+    const created = await activityApi.create(buildPayload())
     ElMessage.success(`活动发布成功，活动ID：${created.activityId}`)
     router.push({ name: 'activity-detail', params: { id: created.activityId } })
   } finally {
