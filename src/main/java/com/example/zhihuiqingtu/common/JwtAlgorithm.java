@@ -1,6 +1,8 @@
 package com.example.zhihuiqingtu.common;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 /**
  * JWT 签名算法。
@@ -71,6 +73,10 @@ public enum JwtAlgorithm {
     /**
      * 校验给定密钥是否满足本算法的长度要求。
      *
+     * <p>异常信息包含密钥的指纹（SHA-256 前 8 位十六进制）而不含密钥本身，
+     * 便于在多来源配置（环境变量、profile 文件、IDE 运行配置）并存时
+     * 定位实际生效的是哪一个值，同时避免把密钥写进日志。
+     *
      * @param secret 密钥原文
      * @throws IllegalStateException 密钥过短时抛出
      */
@@ -78,9 +84,37 @@ public enum JwtAlgorithm {
         int actual = secret == null ? 0 : secret.getBytes(StandardCharsets.UTF_8).length;
         if (actual < requiredKeyBytes) {
             throw new IllegalStateException(String.format(
-                    "jwt.secret 长度不足：%s 要求至少 %d 字节，当前只有 %d 字节。"
-                            + "请用 `openssl rand -base64 64` 重新生成，并通过环境变量 JWT_SECRET 注入。",
-                    name(), requiredKeyBytes, actual));
+                    "jwt.secret 长度不足：%s 要求至少 %d 字节，当前只有 %d 字节"
+                            + "（密钥指纹 %s，算法解析为 %s）。"
+                            + "请用 `openssl rand -base64 64` 生成至少 %d 字节的密钥；"
+                            + "本地开发可写入 application-local.properties 并激活 local profile，"
+                            + "生产环境通过环境变量 JWT_SECRET 注入。",
+                    name(), requiredKeyBytes, actual, fingerprint(secret), name(), requiredKeyBytes));
+        }
+    }
+
+    /**
+     * 计算密钥指纹：SHA-256 的前 8 位十六进制。用于在报错信息中区分不同来源的密钥，
+     * 不泄漏密钥内容。
+     *
+     * @param secret 密钥原文，可为 null
+     * @return 指纹字符串；secret 为 null 时返回 {@code null}
+     */
+    private static String fingerprint(String secret) {
+        if (secret == null) {
+            return "null";
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(secret.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(8);
+            for (int i = 0; i < 4; i++) {
+                sb.append(String.format("%02x", digest[i]));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 是 JDK 必须提供的算法，不会走到这里
+            return "unavailable";
         }
     }
 
