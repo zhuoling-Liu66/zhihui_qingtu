@@ -12,60 +12,20 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 
 /**
- * 活动详情缓存服务 —— Redis 在活动查询链路上的应用。
+ * 活动详情缓存。
  *
- * <h2>为什么值得缓存</h2>
- * {@code ActivityServiceImpl.getActivityDetail} 表面只是"查一个活动"，
- * 但构造返回对象时还要<b>再查两张表</b>（{@code activity_tag_rel} 查关联、{@code activity_tag} 查标签名），
- * 也就是一次详情请求至少 3 条 SQL。而它被 5 个地方调用 ——
- * 包括"改活动状态""开关签到"这些<b>本来只影响 1 行</b>的写操作，写完都要重新查 3 张表把详情返回给前端。
- * 活动详情是典型的「读多写少」，缓存收益明显。
+ * <p>采用 Cache-Aside：读时先查缓存，未命中回源并写回；写时在数据库更新后<b>删除</b>缓存
+ * （而非更新）——并发写会因顺序错乱留下旧值，且未被读取时更新缓存是无效功。
  *
- * <h2>缓存模式：Cache-Aside（旁路缓存）</h2>
- * <pre>
- * 读：先查 Redis → 命中直接返回
- *                → 未命中查 DB → 写回 Redis → 返回
- * 写：先更新 DB → 再【删除】Redis（DEL，而不是更新缓存）
- * </pre>
- * <b>为什么写的时候删除而不是更新缓存？</b>两个原因：
- * <ol>
- *   <li>并发写会写脏：A、B 同时更新，A 先更新 DB 再更新缓存、B 后更新 DB 后更新缓存，
- *       顺序错乱时缓存里会留下 A 的旧值；</li>
- *   <li>惰性加载更划算：如果这个活动写完之后根本没人读，更新缓存就是白做功。</li>
- * </ol>
+ * <p>缓存对象为 {@link ActivityResponse}，其字段 {@code displayStatus} 由 {@code endTime}
+ * 与当前时间计算得出，<b>读取后必须重新计算</b>，不能直接返回缓存中的值，
+ * 否则活动结束后一段时间内仍会展示为进行中。详见 {@link #get}。
  *
- * <h2>三个经典缓存问题的应对</h2>
- * <table border="1">
- *   <tr><th>问题</th><th>是什么</th><th>本类的应对</th></tr>
- *   <tr>
- *     <td>缓存穿透</td>
- *     <td>反复请求不存在的 ID，每次都穿透到数据库</td>
- *     <td>{@link #putMissing} 写一个 60 秒的空值标记</td>
- *   </tr>
- *   <tr>
- *     <td>缓存雪崩</td>
- *     <td>大量 key 同一秒过期，请求同时压向数据库</td>
- *     <td>{@link #put} 给 TTL 加 0~60 秒随机抖动，把过期时间打散</td>
- *   </tr>
- *   <tr>
- *     <td>缓存击穿</td>
- *     <td>某个热点 key 刚好过期，瞬间大量请求打到它</td>
- *     <td>本项目单机教学场景暂未处理（工程上可用互斥锁/逻辑过期），见方案文档说明</td>
- *   </tr>
- * </table>
+ * <p>防穿透：查询不存在的活动时写入短 TTL 空值标记（{@link #putMissing}）。<br>
+ * 防雪崩：写入缓存时给 TTL 附加随机抖动，避免大量 key 同时过期。
  *
- * <h2>本场景特有的坑：不要把 displayStatus 缓存进去</h2>
- * 数据库里 {@code activity_status} 只存 1（已发布）和 4（已取消），
- * 前端看到的 3（已结束）是 {@code ActivityStatusEnum.resolveDisplayStatus} 用
- * {@code endTime} 和 {@code LocalDateTime.now()} <b>现算</b>的。
- * 如果把算好的 {@code displayStatus} 缓存 10 分钟，一个 10:00 结束的活动在 10:00~10:10
- * 会一直显示"进行中"，而且数据库是对的、代码是对的，<b>只有缓存是错的</b>，极难排查。
- * <p>
- * 处理办法：缓存里存「事实」（{@code activityStatus} + {@code endTime}），
- * 返回前重新计算「结论」（{@code displayStatus}）。代码位置见
- * {@code ActivityServiceImpl#toActivityResponse}。
- * <p>
- * <b>这条原则可以推广：缓存"事实"，不要缓存"结论"。凡是依赖 now() 的派生值都不要进缓存。</b>
+ * <p><b>失效范围</b>：任何改变活动详情字段的写路径都必须调用 {@link #evict}，
+ * 包括报名/取消报名（它们会改变 {@code currentParticipant}）。
  */
 @Slf4j
 @Service
@@ -102,6 +62,9 @@ public class ActivityCacheService {
 
     /**
      * 读缓存。
+     *
+     * <p><b>调用方注意</b>：返回对象中的 {@code displayStatus} 是写入时计算并随 JSON 一起
+     * 持久化的值，读取时可能已经过期（该字段依赖当前时间），必须重新计算后再返回给前端。
      *
      * @param activityId 活动主键
      * @return 缓存的详情；null 表示未命中
@@ -147,19 +110,12 @@ public class ActivityCacheService {
     }
 
     /**
-     * 让缓存失效。活动发生任何变更后都必须调用。
-     * <p>
-     * 注意是<b>删除</b>
-     * <p>
-     * <b>哪些路径需要调用</b>，是缓存改造中最容易出错的部分，本项目逐一核对的结论是：
-     * <pre>
-     * updateActivity         ✅ 需要（改了标题/时间/人数等）
-     * changeActivityStatus   ✅ 需要（改了 activity_status）
-     * updateSignInSwitch     ✅ 需要（改了 sign_in_enabled）
-     * deleteActivity         ✅ 需要
-     * createEnrollment       ✅ 需要（改了 current_participant，详情里含这个字段）
-     * cancelEnrollment       ✅ 需要（同上）
-     * </pre>
+     * 失效缓存。任何修改活动详情字段的写路径都必须调用。
+     *
+     * <p>以删除而非更新的方式失效，原因见类注释。当前需要调用的写路径：
+     * {@code updateActivity}、{@code changeActivityStatus}、{@code updateSignInSwitch}、
+     * {@code deleteActivity}、{@code createEnrollment}、{@code cancelEnrollment}。
+     * 新增写路径时须一并确认，遗漏会导致前端读到过期数据。
      *
      * @param activityId 活动主键
      */
@@ -168,14 +124,14 @@ public class ActivityCacheService {
     }
 
     /**
-     * Cache-Aside 的"读"模板方法：把「查缓存 → 回源 → 写回」这套重复流程收在一处。
-     * <p>
-     * 用 {@link Function} 把"怎么从数据库查"作为参数传进来，调用方只需要提供回源逻辑，
-     * 不必在每处都手写一遍缓存判断（也就不会漏掉写回或空值缓存）。
+     * Cache-Aside 的读模板：查缓存 → 未命中回源 → 写回缓存。
+     *
+     * <p>把回源方式作为参数传入，使调用方只需提供查询逻辑，避免各处重复实现缓存判断
+     * 而漏掉写回或空值标记。
      *
      * @param activityId 活动主键
-     * @param loader     回源函数；返回 null 表示数据库里确实没有这条记录
-     * @return 活动详情；数据库里不存在时返回 null（调用方负责抛 4100）
+     * @param loader     回源函数，返回 null 表示数据库中不存在该记录
+     * @return 活动详情；数据库中不存在时返回 null，由调用方决定如何报错
      */
     public ActivityResponse getOrLoad(Long activityId, Function<Long, ActivityResponse> loader) {
         ActivityResponse cached = get(activityId);

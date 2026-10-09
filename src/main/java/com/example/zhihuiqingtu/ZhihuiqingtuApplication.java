@@ -1,24 +1,22 @@
 package com.example.zhihuiqingtu;
 
+import com.example.zhihuiqingtu.common.JwtProperties;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 /**
- * 项目启动类。
- * <p>
- * 这是整个 Spring Boot 后端的入口文件。
- * 当我们运行 main 方法时，Spring Boot 会：
- * <ol>
- *     <li>创建并启动 Spring 容器。</li>
- *     <li>扫描项目中的 Controller、Service、Repository 等组件。</li>
- *     <li>读取 application.properties 中的配置。</li>
- *     <li>启动内嵌的 Web 服务器，让接口可以通过 HTTP 被访问。</li>
- * </ol>
+ * 项目启动入口。
+ *
+ * <p>除标准的组件扫描与 Mapper 扫描外，这里显式注册 {@link JwtProperties}。
+ * 用 {@code @EnableConfigurationProperties} 而不是给配置类加 {@code @Component}，
+ * 是因为 record 无法被组件扫描实例化，构造器绑定需要由配置属性基础设施注册。
  */
 @SpringBootApplication
 // 扫描 repository 包下的 Mapper 接口，让 MyBatis-Plus 为它们创建代理对象。
 @MapperScan("com.example.zhihuiqingtu.repository")
+@EnableConfigurationProperties(JwtProperties.class)
 public class ZhihuiqingtuApplication {
 
     /**

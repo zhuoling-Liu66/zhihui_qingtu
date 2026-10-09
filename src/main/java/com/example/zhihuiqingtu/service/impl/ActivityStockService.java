@@ -12,34 +12,25 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * 活动名额库存服务 —— Redis 在报名链路上的<b>前置闸门</b>。
+ * 活动名额库存的 Redis 前置闸门。
  *
- * <h2>它解决什么问题</h2>
- * {@code EnrollmentServiceImpl} 里的名额占用已经由
- * {@link ActivityMainRepository#tryOccupySeat(Long)} 这条<b>条件 UPDATE</b> 保证正确性了，
- * 也就是说<b>不用 Redis 也不会超卖</b>。Redis 在这里的作用是<b>性能</b>：
- * 秒杀/抢课时成千上万个请求同时打过来，如果全部直接压到 MySQL 上抢同一行的行锁，
- * 数据库连接池会被瞬间打满、行锁排队导致响应时间飙升。
- * 用 Redis 先把绝大多数"名额早没了"的请求挡在数据库外面，只放行少量真正要竞争的请求。
+ * <p><b>定位：性能优化，不承担正确性。</b>名额占用的正确性由
+ * {@link ActivityMainRepository#tryOccupySeat(Long)} 的条件 UPDATE 保证，
+ * 本类只负责把大量注定失败的请求挡在数据库之外，降低行锁竞争与连接池压力。
+ * 因此 Redis 数据丢失或不可用只会退化为性能下降，不会造成超卖。
  *
- * <h2>为什么 Redis 只能当闸门，不能当真相当真相</h2>
- * Redis 可能重启丢数据、可能被误 {@code FLUSHALL}、可能与数据库不一致。
- * 名额这种不能出错的数据，<b>真相永远在 MySQL</b>（{@code current_participant} 那一列）。
- * 所以这里的流程是「Redis 预扣 → DB 条件 UPDATE 定锤 → DB 失败则回补 Redis」，
- * 而不是「Redis 扣成功就算报名成功」。
+ * <p>流程为「Redis 预扣 → 数据库条件 UPDATE 确认 → 数据库失败则回补 Redis」。
+ * 数据库是唯一事实来源，Redis 中的值仅作闸门。
  *
- * <h2>为什么必须用 Lua 脚本</h2>
- * 「GET 看一眼够不够 → DECRBY 扣掉」是两条命令，中间同样有并发窗口 ——
- * 那只是把 Java 里的 check-then-act 原封不动搬到了 Redis 里。
- * Redis 执行 Lua 脚本期间是<b>单线程原子</b>的，不会有别的命令插进来，
- * 这是 Redis 提供的原子性保证（也是它最常用的原子性手段）。
- *
- * <h2>为什么这里注入的是 StringRedisTemplate 而不是项目里的 RedisTemplate</h2>
- * {@code config/RedisConfig} 里的 {@code redisTemplate} 值序列化器是 <b>JSON</b>。
- * 若用它 {@code execute(script, keys, args)} 传参，{@code args} 会被 JSON 序列化 ——
- * 传字符串 {@code "1"} 进去，脚本里 {@code tonumber(ARGV[1])} 拿到的是带引号的 {@code "\"1\""}，
- * 直接算错或报错。而 {@code StringRedisTemplate} 是 Spring Boot 自动配置好的（无需自己写 @Bean），
- * 用纯字符串序列化，参数原样传递。<b>这也说明"不同用途该用不同模板"不是一个多余的设计。</b>
+ * <p><b>维护约束</b>
+ * <ol>
+ *   <li>扣减必须走 Lua 脚本：{@code GET} 与 {@code DECRBY} 分两条命令会重新引入
+ *       并发窗口，等同于把检查-执行竞态搬进 Redis；</li>
+ *   <li>必须使用 {@link StringRedisTemplate} 而非 JSON 序列化的 {@code RedisTemplate}，
+ *       否则脚本参数会被 JSON 编码，{@code tonumber(ARGV[1])} 得到带引号的字符串；</li>
+ *   <li>数据库扣减失败或后续步骤抛异常时，<b>必须回补</b>（{@link #rollback}）——
+ *       Spring 事务不会回滚 Redis 中的扣减。</li>
+ * </ol>
  */
 @Slf4j
 @Service
@@ -54,11 +45,9 @@ public class ActivityStockService {
     private static final long RESULT_NOT_INITIALIZED = -1L;
 
     /**
-     * 库存 key 的存活时间。
+     * 库存 key 的存活时间，用于避免活动结束后残留无主 key。
      * <p>
-     * 必须设 TTL：活动结束后不会再有人报名，但 key 如果永久留着就是内存泄漏。
-     * 24 小时后自动消失；即使活动还在进行，key 过期也只是退化成"回源加载一次"，
-     * 不影响正确性（因为真相在数据库）。
+     * 即使 key 提前过期也只会触发一次回源加载，不影响正确性。
      */
     private static final Duration STOCK_TTL = Duration.ofHours(24);
 
@@ -71,8 +60,8 @@ public class ActivityStockService {
      *       0 = 库存不足
      *      -1 = key 不存在，调用方需要先回源加载
      * </pre>
-     * 脚本里必须 {@code tonumber()} 转换：Redis 的 GET 返回的是字符串，
-     * 直接和数字比较在 Lua 里是「字符串 vs 数字」比较，结果不符合预期。
+     * 必须用 {@code tonumber()} 转换：Redis 返回的是字符串，Lua 中字符串与数字直接比较
+     * 不会得到预期结果。
      */
     private static final DefaultRedisScript<Long> DEDUCT_SCRIPT = new DefaultRedisScript<>("""
             local stock = redis.call('GET', KEYS[1])
@@ -98,10 +87,9 @@ public class ActivityStockService {
 
     /**
      * 判断该活动是否限制人数。
-     * <p>
-     * {@code maxParticipant} 为 {@code null} 或 {@code <= 0} 表示<b>不限人数</b>
-     * （与 {@code EnrollmentServiceImpl} 里的判断保持一致），这种情况完全跳过 Redis，
-     * 直接走数据库路径 —— 没有上限就无所谓"抢名额"。
+     *
+     * <p>{@code maxParticipant} 为 {@code null} 或 {@code <= 0} 表示不限人数
+     * （与 {@code EnrollmentServiceImpl} 的判断保持一致），此时不启用闸门，直接走数据库。
      *
      * @param activity 活动实体
      * @return true 表示限制人数，需要库存闸门
@@ -113,20 +101,18 @@ public class ActivityStockService {
     }
 
     /**
-     * 尝试占用一个名额（Redis 层预扣）。
-     * <p>
-     * key 不存在时会回源数据库加载一次再重试 —— 这是「缓存未命中」的常规处理，
-     * 也顺带解决了"活动是修复上线之前建的、Redis 里根本没有这个 key"的历史数据问题。
+     * 尝试预扣一个名额。
+     *
+     * <p>key 不存在时先回源加载再重试，因此活动未初始化库存也能正常工作。
      *
      * @param activityId 活动主键
-     * @return true 表示 Redis 层放行（<b>仍须由数据库层最终确认</b>）；false 表示 Redis 层判定已满
+     * @return true 表示 Redis 层放行，<b>仍须由数据库条件 UPDATE 最终确认</b>
      */
     public boolean tryDeduct(Long activityId) {
         String key = stockKey(activityId);
         Long result = stringRedisTemplate.execute(DEDUCT_SCRIPT, List.of(key), "1");
 
         if (result != null && result == RESULT_NOT_INITIALIZED) {
-            // 缓存未命中：从数据库回源加载，然后重试一次。
             loadFromDb(activityId);
             result = stringRedisTemplate.execute(DEDUCT_SCRIPT, List.of(key), "1");
         }
@@ -134,11 +120,10 @@ public class ActivityStockService {
     }
 
     /**
-     * 回补一个名额。
-     * <p>
-     * <b>这是整个方案里最容易漏掉的一步。</b>数据库失败时 {@code @Transactional} 会自动回滚，
-     * 但 Redis <b>不是事务资源</b>，Spring 的事务管理器管不到它 —— 不回补的话这个名额就被"白扣"了，
-     * 表现为活动明明还有空位却报"人数已满"。缓存与数据库一致性问题大多源于这类遗漏。
+     * 回补一个名额。数据库扣减失败或后续步骤抛异常时必须调用。
+     *
+     * <p><b>不能依赖事务自动回滚</b>：Redis 不是事务资源，{@code @Transactional} 的回滚
+     * 只作用于数据库。遗漏回补会导致名额被无谓消耗，表现为活动仍有空位却提示人数已满。
      *
      * @param activityId 活动主键
      */
@@ -147,10 +132,10 @@ public class ActivityStockService {
     }
 
     /**
-     * 重置库存（活动发布、修改最大人数、取消报名后调用）。
-     * <p>
-     * 直接用数据库的权威值重算 {@code remaining = maxParticipant - currentParticipant}，
-     * 而不是在旧值上加减 —— 覆盖式写入能自我纠正历史偏差。
+     * 按数据库权威值重置库存（活动发布、修改最大人数后调用）。
+     *
+     * <p>以 {@code maxParticipant - currentParticipant} 覆盖写入，而非在旧值上增减，
+     * 这样可自动纠正历史偏差。
      *
      * @param activityId          活动主键
      * @param maxParticipant      最大人数，null 或 &lt;=0 表示不限
@@ -158,7 +143,7 @@ public class ActivityStockService {
      */
     public void reset(Long activityId, Integer maxParticipant, Integer currentParticipant) {
         if (maxParticipant == null || maxParticipant <= 0) {
-            // 不限人数：删掉库存 key，tryDeduct 的回源分支会直接返回，不会误扣。
+            // 不限人数：移除 key，使 tryDeduct 的回源分支不产生扣减
             stringRedisTemplate.delete(stockKey(activityId));
             return;
         }
@@ -168,7 +153,7 @@ public class ActivityStockService {
     }
 
     /**
-     * 删除库存 key（活动被删除时调用，避免留下无主 key）。
+     * 删除库存 key（活动被删除时调用，避免残留无主 key）。
      *
      * @param activityId 活动主键
      */
@@ -178,9 +163,9 @@ public class ActivityStockService {
 
     /**
      * 从数据库回源加载库存。
-     * <p>
-     * 用 {@code setIfAbsent} 而不是 {@code set}：并发回源时只有一个请求真正写入，
-     * 其余请求复用同一个结果，避免"十个请求各写各的、把刚扣掉的值又覆盖回去"。
+     *
+     * <p>用 {@code setIfAbsent} 而非 {@code set}：并发回源时只有第一个写入生效，
+     * 避免多个请求各自写入而覆盖掉刚刚完成的扣减。
      */
     private void loadFromDb(Long activityId) {
         ActivityMain activity = activityMainRepository.selectById(activityId);

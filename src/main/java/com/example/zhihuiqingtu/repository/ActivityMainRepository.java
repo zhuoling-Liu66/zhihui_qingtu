@@ -7,55 +7,31 @@ import org.apache.ibatis.annotations.Update;
 
 /**
  * 活动主表数据访问层。
- * <p>
- * 除了 {@link BaseMapper} 自带的基础 CRUD 外，这里额外提供了两个<b>原子占用/释放名额</b>
- * 的 SQL，它们是报名并发正确性的最终防线（详细推导见 {@code docs/并发问题复现测试文档.md} 第 7、8 节）。
  *
- * <h3>为什么不能继续用 {@code updateById}</h3>
- * 报名的原实现是「先 {@code selectById} 读出人数 → Java 里判断是否已满 →
- * {@code setCurrentParticipant(+1)} → {@code updateById} 写回」，这是典型的
- * <b>check-then-act（先检查后执行）</b>，两个并发请求会同时读到同一个旧值，各自判断都通过，
- * 于是双双报名成功 —— 超卖。
- * <p>
- * 根因是 MySQL 默认隔离级别 REPEATABLE READ 下，普通 {@code SELECT} 是<b>快照读</b>（不加锁，
- * 读事务开始时的照片），所以 {@code @Transactional} 完全挡不住它：事务保证的是"全做或全不做"，
- * 不保证"你读到的值是最新的"。
- * <p>
- * 把「判断」和「+1」压进<b>同一条 UPDATE 的 WHERE 里</b>，就变成了<b>当前读</b>
- * （读最新已提交的数据、且加行锁），原子性由 InnoDB 保证。
+ * <p>除 {@link BaseMapper} 的基础 CRUD 外，额外提供两个<b>原子占用/释放名额</b>的 SQL，
+ * 用于保证报名并发下的正确性。
  *
- * <h3>为什么 {@code updateById} 还有第二个问题</h3>
- * 它会把 {@link ActivityMain} 的<b>所有字段</b>写回去，于是并发下会把别人刚改的标题、状态等
- * 一起覆盖掉（lost update）。只更新需要变的那一列才是对的，这也是下面两条 SQL 刻意
- * 只 {@code SET current_participant} 的原因。
+ * <p><b>为什么不使用 {@code updateById} 维护名额计数</b>：该做法需先查询、再判断、后写回，
+ * 属于检查-执行竞态。MySQL 默认隔离级别下普通 {@code SELECT} 为快照读，不阻塞并发事务，
+ * 两个事务可能读到同一旧值并同时通过校验，导致超卖；且 {@code updateById} 会写回实体全部字段，
+ * 造成丢失更新。将判断条件并入 {@code UPDATE} 的 {@code WHERE} 后，该语句为当前读并持有行锁，
+ * 并发事务会重新读取最新已提交值再求值条件，由 InnoDB 保证原子性。
  */
 public interface ActivityMainRepository extends BaseMapper<ActivityMain> {
 
     /**
      * 原子占用一个名额。
-     * <p>
-     * 把「判断名额是否已满」和「计数 +1」压进一条 SQL，由数据库保证原子性：
-     * <ul>
-     *   <li>并发时后到的事务会被行锁挡住，拿到锁后<b>重新读取最新已提交的值</b>再判断 WHERE，
-     *       因此不会像快照读那样读到过期数据；</li>
-     *   <li>{@code current_participant = current_participant + 1} 是"在库里的当前值上自增"，
-     *       而不是"用 Java 里读到的旧值 +1 再写回"，天然免疫丢失更新。</li>
-     * </ul>
      *
-     * <p>
-     * <b>调用顺序很重要：必须在 INSERT {@code activity_enroll} 之前执行。</b>
-     * 两个原因：
+     * <p><b>必须在插入报名记录之前调用</b>，原因有两点：
      * <ol>
-     *   <li><b>防超卖</b>：先 UPDATE 才能先拿到行锁并阻塞竞争者，让它们的 WHERE 重新求值；</li>
-     *   <li><b>防死锁</b>：{@code activity_enroll} 上有外键指向本表，INSERT 子表时 InnoDB 会在父表
-     *       这一行加 <b>S 锁</b>。若先 INSERT，两个事务会各自持有 S 锁、随后都去求 X 锁，
-     *       形成循环等待 → 死锁。先 UPDATE 则事务一开始就独占 X 锁，后来者直接在锁上排队，
-     *       不存在"S 锁互等"的循环。</li>
+     *   <li>防超卖：先执行更新可先取得行锁并使竞争者阻塞，其 {@code WHERE} 将基于最新值求值；</li>
+     *   <li>防死锁：{@code activity_enroll} 的外键在插入时会于本表对应行加共享锁。
+     *       若先插入后更新，两个事务可能各自持有共享锁并互相等待对方释放以取得排他锁，
+     *       形成循环等待。先更新则事务一开始即独占排他锁，不存在该循环。</li>
      * </ol>
-     * 一句话：<b>先拿排他锁，再做外键插入。</b>
      *
      * @param activityId 活动主键
-     * @return 影响行数：1 表示成功占到一个名额；0 表示名额已满（或活动不存在/已逻辑删除）
+     * @return 影响行数；1 表示占用成功，0 表示名额已满或活动不存在、已被逻辑删除
      */
     @Update("""
             UPDATE activity_main
@@ -69,8 +45,8 @@ public interface ActivityMainRepository extends BaseMapper<ActivityMain> {
 
     /**
      * 原子释放一个名额（取消报名时调用）。
-     * <p>
-     * 同样只更新这一列，并用 {@code GREATEST(..., 0)} 兜住"减到负数"的异常数据。
+     *
+     * <p>仅更新计数列，并以 {@code GREATEST} 保证不会减至负数。
      *
      * @param activityId 活动主键
      * @return 影响行数

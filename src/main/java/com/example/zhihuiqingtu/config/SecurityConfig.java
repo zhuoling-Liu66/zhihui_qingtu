@@ -1,12 +1,12 @@
 package com.example.zhihuiqingtu.config;
 
 import com.example.zhihuiqingtu.common.ApiResponse;
+import com.example.zhihuiqingtu.common.JwtProperties;
 import com.example.zhihuiqingtu.security.CompositeBearerTokenResolver;
 import com.example.zhihuiqingtu.security.JwtBlacklistValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -22,9 +22,7 @@ import org.springframework.security.config.annotation.web.configurers.HttpBasicC
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -34,32 +32,29 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import tools.jackson.databind.ObjectMapper;
 
-import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 /**
- * 安全配置：JWT 认证 + 声明式授权。
+ * 安全配置：JWT 认证与授权。
  *
- * <h2>这个类替换掉了什么</h2>
- * <table border="1">
- *   <tr><th>原来（手写）</th><th>现在（框架）</th></tr>
- *   <tr><td>{@code TokenInterceptor} 手工验签、手工写 401 响应</td>
- *       <td>{@code .oauth2ResourceServer(jwt())} + {@link JwtDecoder}</td></tr>
- *   <tr><td>{@code WebConfig#addInterceptors} 的放行名单（且路径写错过）</td>
- *       <td>{@code authorizeHttpRequests(...).requestMatchers(...).permitAll()}</td></tr>
- *   <tr><td>Service 里各处 {@code checkXxxPermission} 手写 if 判断</td>
- *       <td>{@code @PreAuthorize}（需配合 {@link EnableMethodSecurity}）</td></tr>
- *   <tr><td>自己解析 token 取身份</td>
- *       <td>框架写入 {@code SecurityContextHolder}，见 {@code CurrentUser}</td></tr>
- * </table>
+ * <p><b>认证</b>：凭证为请求头中的 JWT，由 {@code oauth2ResourceServer} 的过滤器链完成验签、
+ * 有效期校验与登出黑名单校验；算法与密钥取自 {@link JwtProperties}，与签发端共用同一配置，
+ * 避免两端不一致导致"自己签的令牌验不过"。
  *
- * <h2>为什么"弃用 .and() 链式"是必须的</h2>
- * Spring Security 7 移除了 {@code and()} 和 {@code authorizeRequests()}。
- * 网上绝大多数教程是 6.x 的写法（{@code http.authorizeRequests()...and()...}），
- * <b>在 7.x 上会直接编译不过或运行期报错</b>。7.x 只能用
- * {@code Customizer} 函数式风格，也就是下面每一行 {@code .xxx(c -> ...)} 的写法。
+ * <p><b>授权</b>：URL 级规则见下方 {@link #securityFilterChain}；
+ * 方法级规则用 {@code @PreAuthorize} 声明在各 Service 方法上（需 {@link EnableMethodSecurity} 生效）。
+ *
+ * <p><b>维护约束</b>
+ * <ol>
+ *   <li>授权规则<b>按声明顺序匹配、先匹配先生效</b>，{@code anyRequest()} 必须置于末尾；</li>
+ *   <li>新增放行路径时，路径必须与 Controller 的真实映射一致（注意 {@code /api} 前缀）；</li>
+ *   <li>若鉴权凭证改为由 Cookie 携带，<b>必须重新启用 CSRF 防护</b>；</li>
+ *   <li>401 与 403 的错误体统一为 {@code ApiResponse} 结构，改动需同步前端解析逻辑。</li>
+ * </ol>
+ *
+ * @see com.example.zhihuiqingtu.security.CompositeBearerTokenResolver
+ * @see com.example.zhihuiqingtu.security.JwtBlacklistValidator
  */
 @Slf4j
 @Configuration
@@ -67,8 +62,8 @@ import java.util.List;
 public class SecurityConfig {
 
     /** 业务错误码：与 {@code GlobalExceptionHandler} 的编号习惯保持一致。 */
-    private static final int UNAUTHORIZED_CODE = 4010;
-    private static final int FORBIDDEN_CODE = 4030;
+    private static final int UNAUTHORIZED_CODE = 401;
+    private static final int FORBIDDEN_CODE = 403;
 
     private final ObjectMapper objectMapper;
 
@@ -82,159 +77,124 @@ public class SecurityConfig {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 一、JWT 解码器：替代 JwtUtil.parseToken 的验签职责
+    // 一、JWT 解码器
     // ══════════════════════════════════════════════════════════════
 
     /**
-     * 用与签发端相同的密钥构造 JWT 解码器。
+     * 构造 JWT 解码器（验签 + 校验有效期 + 校验登出黑名单）。
      *
-     * <h3>为什么必须显式指定 HS512</h3>
-     * 本项目签发时用的是 {@code Jwts...signWith(key)}，而 JJWT 会
-     * <b>按密钥长度自动选算法</b>：≥64 字节选 HS512、48~63 选 HS384、32~47 选 HS256。
-     * 解码端如果只写 {@code withSecretKey(key)}，Nimbus 默认按 <b>HS256</b> 校验，
-     * 于是"自己签的 token 自己验不过"——这类问题表现为一律 401，很难排查。
-     * <p>
-     * 所以这里从配置读算法（默认 HS512），保证签发/校验两边一致。
+     * <p><b>密钥与算法取自 {@link JwtProperties}</b>，与签发端 {@code JwtUtil} 共用同一配置对象。
+     * 这是必须的：两端算法或密钥只要有一处不一致，就会出现"自己签的 token 自己验不过"，
+     * 症状是所有携带合法令牌的请求返回 401，且与"请求里根本没带令牌"的表现完全相同，
+     * 排查成本很高。
      *
-     * <h3>为什么同时校验密钥长度</h3>
-     * HMAC 算法对密钥长度有硬性要求（HS512 要求 ≥512 bit = 64 字节）。
-     * 在启动时就检查，比等到第一个请求 500 要好——这是 fail-fast。
+     * <p><b>必须显式指定算法</b>：{@code NimbusJwtDecoder.withSecretKey(key)} 若不指定，
+     * 默认按 HS256 校验，与 HS384/HS512 签发的令牌不匹配。
      *
-     * @param secret   签名密钥，来自 {@code jwt.secret}
-     * @param algName  算法名，来自 {@code jwt.algorithm}，默认 HS512
+     * <p>解码器只负责"验签 + 有效期"；登出黑名单通过 {@link JwtBlacklistValidator} 追加，
+     * 见下方说明。
+     *
+     * @param jwtProperties        JWT 配置（密钥、算法）
+     * @param jwtBlacklistValidator 登出黑名单校验器
+     * @return 配置好的解码器
      */
     @Bean
-    public JwtDecoder jwtDecoder(@Value("${jwt.secret}") String secret,
-                                @Value("${jwt.algorithm:HS512}") String algName,
+    public JwtDecoder jwtDecoder(JwtProperties jwtProperties,
                                 JwtBlacklistValidator jwtBlacklistValidator) {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        MacAlgorithm macAlgorithm = switch (algName.toUpperCase()) {
-            case "HS256" -> MacAlgorithm.HS256;
-            case "HS384" -> MacAlgorithm.HS384;
-            case "HS512" -> MacAlgorithm.HS512;
-            default -> throw new IllegalStateException(
-                    "不支持的 jwt.algorithm=" + algName + "，仅支持 HS256 / HS384 / HS512");
+        MacAlgorithm macAlgorithm = switch (jwtProperties.resolvedAlgorithm()) {
+            case HS256 -> MacAlgorithm.HS256;
+            case HS384 -> MacAlgorithm.HS384;
+            case HS512 -> MacAlgorithm.HS512;
         };
 
-        int requiredBytes = switch (macAlgorithm) {
-            case HS256 -> 32;
-            case HS384 -> 48;
-            case HS512 -> 64;
-            default -> 64;
-        };
-        if (keyBytes.length < requiredBytes) {
-            // 配置写错时宁可启动失败，也不要带着不安全的密钥跑起来
-            throw new IllegalStateException(String.format(
-                    "jwt.secret 长度不足：%s 要求至少 %d 字节，当前只有 %d 字节。"
-                            + "请用 `openssl rand -base64 64` 生成新密钥，并通过环境变量 JWT_SECRET 注入。",
-                    macAlgorithm.name(), requiredBytes, keyBytes.length));
-        }
-
-        SecretKeySpec key = new SecretKeySpec(keyBytes, "HmacSHA512");
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key)
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtProperties.secretKey())
                 .macAlgorithm(macAlgorithm)
                 .build();
 
         /*
-         * ★ 挂上黑名单校验器。
+         * 追加黑名单校验。
          *
-         * 这一步是"迁移不能只看编译通过"的典型例子：原来手写的 TokenInterceptor
-         * 除了验签，还负责查 Redis 黑名单（登出功能）。拦截器删掉后，
-         * 登出接口依然在往 Redis 写黑名单，但没人读了 —— 表现为"登出后令牌仍然有效"。
-         * 这种回归不会编译失败、不会抛异常，只能靠端到端测试发现。
-         *
-         * 把校验挂进解码器后，框架在解码阶段就会拒绝黑名单里的令牌，
-         * 自动按认证失败处理（401），而且带上标准的 OAuth2Error 描述。
-         *
-         * 注意顺序：DelegatingOAuth2TokenValidator 会依次执行，
-         * 默认的 JwtValidators.createDefault()（校验 exp/nbf）由 NimbusJwtDecoder.build()
-         * 已经设置好；这里 setJwtValidator 会**替换**它，所以必须显式把默认校验器带上，
-         * 否则过期时间就不再被检查了（这是个很容易漏的安全漏洞）。
+         * setJwtValidator 是【替换】语义而非追加：不显式带上 JwtValidators.createDefault()，
+         * 框架默认的 exp/nbf 校验就会被顶掉，导致【已过期的令牌永久有效】——
+         * 这是静默的安全漏洞，不会报错、不会失败，只有安全测试才能发现。
          */
-        OAuth2TokenValidator<Jwt> withDefaults = JwtValidators.createDefault();
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(withDefaults, jwtBlacklistValidator));
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefault(), jwtBlacklistValidator));
 
-        log.info("JWT 解码器已就绪：算法={} 密钥长度={} 字节，已启用默认校验(exp/nbf) + 黑名单校验",
-                macAlgorithm.name(), keyBytes.length);
+        log.info("JWT 解码器已就绪：算法={}，已启用默认校验(exp/nbf) + 黑名单校验",
+                macAlgorithm.name());
         return decoder;
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 二、过滤器链：替代整个 TokenInterceptor
+    // 二、过滤器链：认证与授权的装配入口
     // ══════════════════════════════════════════════════════════════
 
     /**
-     * 安全过滤器链。
-     * <p>
-     * 这个方法替代了原来的 {@code TokenInterceptor}（验签 + 黑名单 + 写 401）
-     * 和 {@code WebConfig} 里的放行名单。
+     * 安全过滤器链：装配认证与授权规则。
+     *
+     * <p>方法内的配置块顺序即为生效顺序，且其中若干项互为前提
+     * （例如必须关闭表单登录，未认证请求才会返回 401 而非重定向），
+     * 调整顺序或删减配置块前请先确认其作用。
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 /*
-                 * CSRF：本项目的鉴权凭证是请求头里的 token，不是 Cookie，
-                 * 浏览器不会自动携带，所以不存在 CSRF 攻击面。
-                 * （如果哪天改成 Cookie 存 token，必须重新打开 CSRF 防护。）
+                 * 关闭 CSRF 防护。
+                 * 前提：鉴权凭证在请求头中由前端显式携带，浏览器不会自动附加，因此不存在
+                 * CSRF 攻击面。若凭证改为 Cookie 携带，该前提不再成立，必须重新启用。
                  */
                 .csrf(CsrfConfigurer::disable)
 
                 /*
-                 * 无状态：JWT 自带状态，服务端不存 session。
-                 * 不设这一条的话 Spring Security 会创建 HttpSession，
-                 * 那就违背了"无状态"的初衷，也会让水平扩容变复杂。
+                 * 无状态：JWT 自带身份信息，服务端不创建 HttpSession。
+                 * 否则会退化为有状态会话，水平扩容时需额外处理会话共享。
                  */
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 /*
-                 * 关掉表单登录和 HTTP Basic。
-                 * 这两个是 Spring Security 的默认行为，不关的话：
-                 *   · 未认证请求会被 302 重定向到 /login 页面，而不是返回 401 JSON；
-                 *   · 浏览器可能弹出原生的用户名/密码对话框。
-                 * 对前后端分离的 API 来说都必须关掉。
+                 * 关闭表单登录与 HTTP Basic —— 二者均为 Spring Security 默认开启。
+                 * 不关闭时：未认证请求会被 302 重定向到登录页，而非返回 401 JSON；
+                 * 浏览器还可能弹出原生认证对话框。前后端分离场景必须关闭。
                  */
                 .formLogin(FormLoginConfigurer::disable)
                 .httpBasic(HttpBasicConfigurer::disable)
 
                 /*
-                 * 授权规则。顺序有意义：先放行，再兜底。
-                 * 这里的路径必须是【真实映射路径】——原来 WebConfig 写成 "/user/login"，
-                 * 而实际是 "/api/auth/login"（少了 /api），是死配置。
+                 * 授权规则。顺序即优先级：先放行，末尾兜底。
+                 * 路径必须与 Controller 的真实映射完全一致（注意 /api 前缀）。
                  */
                 .authorizeHttpRequests(auth -> auth
-                        // 登录/注册：本身就是用来获取 token 的，必须放行
+                        // 登录/注册：用于换取令牌，本身不能要求令牌
                         .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
-                        // 上传的封面图等静态资源：前端用 <img src> 直接引用，带不了 token
+                        // 静态封面图：由 <img src> 直接引用，无法携带请求头
                         .requestMatchers("/uploads/**").permitAll()
                         // 接口文档
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        // 健康检查：运维探针用，需显式放行（Boot 默认只暴露 health）
+                        // 健康检查：供运维探针访问
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         // 其余一律要求已认证
                         .anyRequest().authenticated())
 
                 /*
-                 * 开启 JWT 校验：这一步替代了 TokenInterceptor 里"验签"的全部逻辑。
-                 * 认证成功后，框架会把 JwtAuthenticationToken 写入 SecurityContextHolder。
+                 * 开启 JWT 校验。认证成功后框架将 JwtAuthenticationToken 写入 SecurityContextHolder。
                  *
-                 * bearerTokenResolver：指定"从哪里取令牌"。
-                 * 默认只认标准头 Authorization: Bearer xxx，而本项目历史上用的是自定义的
-                 * `token: xxx` 裸头 —— 不注册这个解析器的话，令牌根本读不到，
-                 * 表现为所有带合法 token 的请求都 401（详见 CompositeBearerTokenResolver 的注释）。
+                 * bearerTokenResolver 指定令牌的读取位置：默认实现只认标准头
+                 * `Authorization: Bearer <token>`，无法读取本项目历史使用的裸头，
+                 * 会导致令牌始终为空、所有请求 401（详见 CompositeBearerTokenResolver）。
                  */
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(compositeBearerTokenResolver)
                         .jwt(Customizer.withDefaults())
-                        // 自定义 401 响应体，保持与项目其他接口一致的 ApiResponse 结构
+                        // 401 响应体保持项目统一的 ApiResponse 结构
                         .authenticationEntryPoint(authenticationEntryPoint()))
 
                 /*
-                 * 403：已认证但权限不足（例如学生去审核学分）。
-                 * 注意 401 和 403 的区别：
-                 *   401 = 你没登录 / 凭证无效  → 应该去登录
-                 *   403 = 你登录了，但没权限  → 登录也没用
-                 * 原来手写实现里两者都返回 401，前端无法区分。
+                 * 403 处理：已认证但权限不足。
+                 * 与 401 的区别：401 表示凭证缺失或无效（应引导登录），
+                 * 403 表示身份有效但无权访问（重新登录无意义）。
                  */
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authenticationEntryPoint())
@@ -298,18 +258,5 @@ public class SecurityConfig {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.getWriter().write(objectMapper.writeValueAsString(body));
-    }
-
-    /**
-     * 保留给以后需要更细粒度规则时使用。
-     * <p>
-     * 说明：{@link #securityFilterChain} 里用 {@code permitAll()} 放行的路径，
-     * 其顺序在 Spring Security 中是<b>按声明顺序匹配、先匹配先生效</b>，
-     * 所以"具体路径写在宽泛路径之前"是关键，不要调换。
-     */
-    protected List<String> publicPaths() {
-        return List.of("/api/auth/login", "/api/auth/register", "/uploads/**",
-                "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",
-                "/actuator/health");
     }
 }
