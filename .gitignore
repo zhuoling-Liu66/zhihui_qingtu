@@ -6,6 +6,9 @@ logs/
 .env
 .env.*
 !.env.example
+# 本地开发专用配置（含真实 JWT 密钥等本机私密值），不提交
+application-local.properties
+src/main/resources/application-local.properties
 .qoder/
 .github/java-upgrade/
 .mvn/wrapper/maven-wrapper.jar
