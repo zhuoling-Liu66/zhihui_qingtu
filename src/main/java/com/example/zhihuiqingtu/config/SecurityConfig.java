@@ -42,8 +42,12 @@ import java.nio.charset.StandardCharsets;
  * 有效期校验与登出黑名单校验；算法与密钥取自 {@link JwtProperties}，与签发端共用同一配置，
  * 避免两端不一致导致"自己签的令牌验不过"。
  *
- * <p><b>授权</b>：URL 级规则见下方 {@link #securityFilterChain}；
- * 方法级规则用 {@code @PreAuthorize} 声明在各 Service 方法上（需 {@link EnableMethodSecurity} 生效）。
+ * <p><b>授权</b>：URL 级规则见下方 {@link #securityFilterChain}。
+ * 方法级授权（{@code @PreAuthorize}）的开关已通过 {@link EnableMethodSecurity} 打开，
+ * 但<b>当前尚未在业务代码中使用</b>：角色判断由 {@code security/CurrentUser}
+ * 从 JWT 的 {@code role} claim 读取后在 Service 内显式校验。
+ * 若改为使用 {@code @PreAuthorize}，需注意其抛出的 {@code AccessDeniedException}
+ * 需由 {@code GlobalExceptionHandler} 单独处理，否则会被兜底分支转成 5000。
  *
  * <p><b>维护约束</b>
  * <ol>
