@@ -9,6 +9,9 @@ logs/
 # 本地开发专用配置（含真实 JWT 密钥等本机私密值），不提交
 application-local.properties
 src/main/resources/application-local.properties
+# 简历等个人材料（含手机号、邮箱等个人信息），不提交
+docs/*简历*.docx
+docs/*简历*.pdf
 .qoder/
 .github/java-upgrade/
 .mvn/wrapper/maven-wrapper.jar
