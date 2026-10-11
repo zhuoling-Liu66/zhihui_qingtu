@@ -1,5 +1,6 @@
 package com.example.zhihuiqingtu.service.impl;
 
+import com.example.zhihuiqingtu.common.ErrorCode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.example.zhihuiqingtu.common.JwtUtil;
@@ -77,15 +78,15 @@ public class AuthServiceImpl implements AuthService {
     @Transactional(rollbackFor = Exception.class)
     public UserProfileResponse register(RegisterRequest request) {
         if (existsActiveUser(UserInfo::getStudentNo, request.getStudentNo())) {
-            throw new BusinessException(4004, "学号或工号已存在");
+            throw new BusinessException(ErrorCode.CONFLICT, "学号或工号已存在");
         }
         if (request.getUserPhone() != null && !request.getUserPhone().isBlank()
                 && existsActiveUser(UserInfo::getUserPhone, request.getUserPhone())) {
-            throw new BusinessException(4005, "手机号已存在");
+            throw new BusinessException(ErrorCode.CONFLICT, "手机号已存在");
         }
         if (request.getUserEmail() != null && !request.getUserEmail().isBlank()
                 && existsActiveUser(UserInfo::getUserEmail, request.getUserEmail())) {
-            throw new BusinessException(4006, "邮箱已存在");
+            throw new BusinessException(ErrorCode.CONFLICT, "邮箱已存在");
         }
 
         UserInfo userInfo = UserInfo.builder()
@@ -133,14 +134,14 @@ public class AuthServiceImpl implements AuthService {
             // 用户不存在也要计入失败次数（见类注释里的说明），否则攻击者可以用
             // "返回 4007 还是 4008" 来枚举系统中存在哪些学号。
             recordLoginFailure(failKey);
-            throw new BusinessException(4007, "用户不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
         // 注意这里必须用 matches(明文, 数据库里的密文)，不能再用 equals 比较两个哈希。
         // 因为 BCrypt 每次编码用的盐都是随机的，同一个密码两次 encode 出来的结果不同，
         // 只有 matches() 知道怎么从密文里把盐拆出来、重算后再比对。
         if (!passwordEncoder.matches(request.getPassword(), userInfo.getPasswordHash())) {
             recordLoginFailure(failKey);
-            throw new BusinessException(4008, "用户名或密码错误");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "用户名或密码错误");
         }
 
         // 登录成功 → 清空失败计数。
@@ -176,7 +177,7 @@ public class AuthServiceImpl implements AuthService {
         }
         Long ttlSeconds = stringRedisTemplate.getExpire(failKey, TimeUnit.SECONDS);
         long remainMinutes = ttlSeconds == null || ttlSeconds <= 0 ? 0 : (ttlSeconds / 60 + 1);
-        throw new BusinessException(4029, "密码错误次数过多，请 " + remainMinutes + " 分钟后再试");
+        throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "密码错误次数过多，请 " + remainMinutes + " 分钟后再试");
     }
 
     /**

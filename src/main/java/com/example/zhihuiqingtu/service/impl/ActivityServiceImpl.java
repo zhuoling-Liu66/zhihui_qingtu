@@ -1,5 +1,6 @@
 package com.example.zhihuiqingtu.service.impl;
 
+import com.example.zhihuiqingtu.common.ErrorCode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.zhihuiqingtu.common.PageResponse;
@@ -94,15 +95,15 @@ public class ActivityServiceImpl implements ActivityService {
     @Override
     public ActivityCoverUploadResponse uploadActivityCover(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new BusinessException(4109, "请先选择活动封面图片");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "请先选择活动封面图片");
         }
         if (file.getSize() > uploadProperties.getMaxCoverSize().toBytes()) {
-            throw new BusinessException(4110, "活动封面不能超过5MB");
+            throw new BusinessException(ErrorCode.PAYLOAD_TOO_LARGE, "活动封面不能超过5MB");
         }
 
         String contentType = file.getContentType();
         if (!StringUtils.hasText(contentType) || !contentType.toLowerCase(Locale.ROOT).startsWith("image/")) {
-            throw new BusinessException(4111, "仅支持上传图片格式的活动封面");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "仅支持上传图片格式的活动封面");
         }
 
         String extension = resolveExtension(file.getOriginalFilename());
@@ -113,11 +114,11 @@ public class ActivityServiceImpl implements ActivityService {
         try {
             Files.createDirectories(coverDir);
             if (!target.startsWith(coverDir)) {
-                throw new BusinessException(4112, "封面保存路径非法");
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "封面保存路径非法");
             }
             Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException exception) {
-            throw new BusinessException(4113, "活动封面上传失败，请稍后重试");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "活动封面上传失败，请稍后重试");
         }
 
         return ActivityCoverUploadResponse.builder()
@@ -184,7 +185,7 @@ public class ActivityServiceImpl implements ActivityService {
         );
 
         if (request.getMaxParticipant() < activityMain.getCurrentParticipant()) {
-            throw new BusinessException(4101, "最大参与人数不能小于当前已报名人数");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "最大参与人数不能小于当前已报名人数");
         }
 
         activityMain.setActivityTitle(request.getActivityTitle());
@@ -219,7 +220,7 @@ public class ActivityServiceImpl implements ActivityService {
         checkActivityManagePermission(activityMain, operator);
 
         if (!ActivityStatusEnum.isPersistentStatus(request.getActivityStatus())) {
-            throw new BusinessException(4104, "活动状态仅支持切换为已发布或已取消");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "活动状态仅支持切换为已发布或已取消");
         }
         activityMain.setActivityStatus(request.getActivityStatus());
         activityMainRepository.updateById(activityMain);
@@ -237,15 +238,15 @@ public class ActivityServiceImpl implements ActivityService {
         checkActivityManagePermission(activityMain, operator);
 
         if (!Integer.valueOf(0).equals(request.getSignInEnabled()) && !Integer.valueOf(1).equals(request.getSignInEnabled())) {
-            throw new BusinessException(4105, "签到开关仅支持0或1");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "签到开关仅支持0或1");
         }
         if (Integer.valueOf(1).equals(request.getSignInEnabled())
                 && ActivityStatusEnum.FINISHED.getCode().equals(resolveDisplayStatus(activityMain))) {
-            throw new BusinessException(4106, "已结束活动不能再开启签到");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "已结束活动不能再开启签到");
         }
         if (ActivityStatusEnum.CANCELED.getCode().equals(activityMain.getActivityStatus())
                 && Integer.valueOf(1).equals(request.getSignInEnabled())) {
-            throw new BusinessException(4107, "已取消活动不能开启签到");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "已取消活动不能开启签到");
         }
 
         activityMain.setSignInEnabled(request.getSignInEnabled());
@@ -334,14 +335,14 @@ public class ActivityServiceImpl implements ActivityService {
             return cached;
         }
         if (activityCacheService.isKnownMissing(activityId)) {
-            throw new BusinessException(4100, "活动不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "活动不存在");
         }
 
         ActivityMain activityMain = activityMainRepository.selectById(activityId);
         if (activityMain == null) {
             // 缓存一个短 TTL 的空值标记，挡住"反复请求不存在 ID"这类穿透流量
             activityCacheService.putMissing(activityId);
-            throw new BusinessException(4100, "活动不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "活动不存在");
         }
 
         ActivityResponse response = toActivityResponse(activityMain);
@@ -441,48 +442,48 @@ public class ActivityServiceImpl implements ActivityService {
         Set<Long> uniqueTagIds = new LinkedHashSet<>(tagIds);
         List<ActivityTag> tags = activityTagRepository.selectBatchIds(uniqueTagIds);
         if (tags.size() != uniqueTagIds.size()) {
-            throw new BusinessException(4102, "存在无效的活动标签，请先调用 /api/activities/tags 查看可用标签ID");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "存在无效的活动标签，请先调用 /api/activities/tags 查看可用标签ID");
         }
     }
 
     private void validateActivityAttributes(Integer activityType, BigDecimal activityCredit, Integer creditType, BigDecimal volunteerHours) {
         if (ActivityTypeEnum.SECOND_CLASS.getCode().equals(activityType)) {
             if (activityCredit == null) {
-                throw new BusinessException(4114, "第二课堂学分活动必须设置学分");
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "第二课堂学分活动必须设置学分");
             }
             if (creditType == null) {
-                throw new BusinessException(4115, "第二课堂学分活动必须选择学分类型");
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "第二课堂学分活动必须选择学分类型");
             }
             if (!isValidCreditType(creditType)) {
-                throw new BusinessException(4116, "学分类型不合法");
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "学分类型不合法");
             }
             if (volunteerHours != null && volunteerHours.compareTo(BigDecimal.ZERO) > 0) {
-                throw new BusinessException(4117, "第二课堂学分活动不能设置志愿服务时长");
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "第二课堂学分活动不能设置志愿服务时长");
             }
             return;
         }
 
         if (ActivityTypeEnum.VOLUNTEER.getCode().equals(activityType)) {
             if (volunteerHours == null) {
-                throw new BusinessException(4118, "志愿服务活动必须设置志愿服务时长");
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "志愿服务活动必须设置志愿服务时长");
             }
             if (activityCredit != null && activityCredit.compareTo(BigDecimal.ZERO) > 0) {
-                throw new BusinessException(4119, "志愿服务活动不允许设置学分");
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "志愿服务活动不允许设置学分");
             }
             if (creditType != null) {
-                throw new BusinessException(4120, "志愿服务活动不允许设置学分类型");
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "志愿服务活动不允许设置学分类型");
             }
             return;
         }
 
         if (activityCredit != null && activityCredit.compareTo(BigDecimal.ZERO) > 0) {
-            throw new BusinessException(4121, "非第二课堂学分活动不允许设置学分");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "非第二课堂学分活动不允许设置学分");
         }
         if (creditType != null) {
-            throw new BusinessException(4122, "非第二课堂学分活动不允许设置学分类型");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "非第二课堂学分活动不允许设置学分类型");
         }
         if (volunteerHours != null && volunteerHours.compareTo(BigDecimal.ZERO) > 0) {
-            throw new BusinessException(4123, "仅志愿服务活动允许设置志愿服务时长");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "仅志愿服务活动允许设置志愿服务时长");
         }
     }
 
@@ -576,7 +577,7 @@ public class ActivityServiceImpl implements ActivityService {
                 || UserRoleEnum.TEACHER.getCode().equals(userInfo.getUserRole())
                 || Integer.valueOf(1).equals(userInfo.getPublisherStatus());
         if (!allowed) {
-            throw new BusinessException(4103, "当前用户没有活动发布权限");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "当前用户没有活动发布权限");
         }
     }
 
@@ -586,13 +587,13 @@ public class ActivityServiceImpl implements ActivityService {
         }
         if (!UserRoleEnum.ADMIN.getCode().equals(operator.getUserRole())
                 && !UserRoleEnum.TEACHER.getCode().equals(operator.getUserRole())) {
-            throw new BusinessException(4108, "当前用户没有活动管理权限");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "当前用户没有活动管理权限");
         }
     }
 
     private void validateActivityTime(LocalDateTime startTime, LocalDateTime endTime) {
         if (startTime == null || endTime == null || !endTime.isAfter(startTime)) {
-            throw new BusinessException(4124, "活动结束时间必须晚于开始时间");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "活动结束时间必须晚于开始时间");
         }
     }
 
@@ -611,7 +612,7 @@ public class ActivityServiceImpl implements ActivityService {
     private UserInfo requireUser(String userId) {
         UserInfo userInfo = userInfoRepository.selectById(userId);
         if (userInfo == null) {
-            throw new BusinessException(4009, "用户不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
         return userInfo;
     }
@@ -619,7 +620,7 @@ public class ActivityServiceImpl implements ActivityService {
     private ActivityMain requireActivity(Long activityId) {
         ActivityMain activityMain = activityMainRepository.selectById(activityId);
         if (activityMain == null) {
-            throw new BusinessException(4100, "活动不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "活动不存在");
         }
         return activityMain;
     }

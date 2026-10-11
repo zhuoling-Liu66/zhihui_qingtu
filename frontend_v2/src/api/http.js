@@ -43,26 +43,24 @@ http.interceptors.request.use((config) => {
 /**
  * 判断一个响应是不是"未授权（401）"。
  *
- * 迁移到 Spring Security 后，401 和 403 由框架区分开了，含义不同：
+ * 401 和 403 含义不同，必须分开处理：
  *   · **401** = 没登录 / 令牌无效或过期 → 应引导用户重新登录
  *   · **403** = 已登录但没有权限   → 重新登录也没用，只需提示
- * 所以这里要把两者分开处理，不能都当成"登录失效"。
  *
- * 判据要同时看 HTTP 状态码和业务 code：
- * 框架写的 401/403 带 HTTP 状态码；而项目里其他业务错误是
- * HTTP 200 + 非 0 的 body.code。只看一边都会漏。
+ * 后端已统一为"业务码 = HTTP 状态码"（见 `common/ErrorCode`）：
+ * 业务异常也会返回对应的 HTTP 状态码，所以这里只看 HTTP 状态即可，
+ * 不再需要额外判断 body 里的 code。
+ *
+ * 注意：登录接口的"用户名或密码错误"用 400 而不是 401
+ * （401 专指"令牌无效/未登录"），因此密码输错不会走到这里清空会话。
  */
 function isUnauthorized(error) {
   return error?.response?.status === 401
-    || error?.response?.data?.code === 4010
-    || error?.response?.data?.code === 401
 }
 
 /** 已登录但无权限（403）：只提示，不弹登录框。 */
 function isForbidden(error) {
   return error?.response?.status === 403
-    || error?.response?.data?.code === 4030
-    || error?.response?.data?.code === 403
 }
 
 http.interceptors.response.use(
@@ -74,6 +72,8 @@ http.interceptors.response.use(
       return payload.data
     }
 
+    // 兜底：正常契约下业务失败会带非 2xx 状态码、走下面的错误回调，
+    // 所以这里只处理"HTTP 200 但业务码非 0"的异常情况（例如被网关改写过的响应）。
     const message = payload?.message || '请求失败'
     ElMessage.error(message)
     return Promise.reject(new Error(message))

@@ -1,6 +1,7 @@
 package com.example.zhihuiqingtu.config;
 
 import com.example.zhihuiqingtu.common.ApiResponse;
+import com.example.zhihuiqingtu.common.ErrorCode;
 import com.example.zhihuiqingtu.common.JwtProperties;
 import com.example.zhihuiqingtu.security.CompositeBearerTokenResolver;
 import com.example.zhihuiqingtu.security.JwtBlacklistValidator;
@@ -64,10 +65,6 @@ import java.nio.charset.StandardCharsets;
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
-
-    /** 业务错误码：与 {@code GlobalExceptionHandler} 的编号习惯保持一致。 */
-    private static final int UNAUTHORIZED_CODE = 401;
-    private static final int FORBIDDEN_CODE = 403;
 
     private final ObjectMapper objectMapper;
 
@@ -208,21 +205,22 @@ public class SecurityConfig {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 三、401 / 403 响应：保持 ApiResponse 结构不变
+    // 三、401 / 403 响应：与 GlobalExceptionHandler 使用同一套错误码
     // ══════════════════════════════════════════════════════════════
 
     /**
-     * 401 处理器：未登录或 token 无效。
+     * 401 处理器：未登录或令牌无效。
      * <p>
-     * 仍然返回 {@code {code:4010, message:"...", data:null}}，
-     * 让前端不必因为换了鉴权实现而改解析逻辑。
+     * 返回 {@code {code:401, message:"...", data:null}}，业务码与 HTTP 状态码同值，
+     * 与 {@code GlobalExceptionHandler} 的约定一致。
      */
     @Bean
     public AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, authException) -> {
             String message = resolveUnauthorizedMessage(authException);
             log.debug("鉴权失败 {} {}: {}", request.getMethod(), request.getRequestURI(), message);
-            writeJson(response, HttpStatus.UNAUTHORIZED, ApiResponse.failure(UNAUTHORIZED_CODE, message));
+            writeJson(response, HttpStatus.UNAUTHORIZED,
+                    ApiResponse.failure(ErrorCode.UNAUTHORIZED, message));
         };
     }
 
@@ -235,7 +233,7 @@ public class SecurityConfig {
             log.debug("权限不足 {} {}: {}", request.getMethod(), request.getRequestURI(),
                     accessDeniedException.getMessage());
             writeJson(response, HttpStatus.FORBIDDEN,
-                    ApiResponse.failure(FORBIDDEN_CODE, "没有权限执行该操作"));
+                    ApiResponse.failure(ErrorCode.FORBIDDEN, "没有权限执行该操作"));
         };
     }
 

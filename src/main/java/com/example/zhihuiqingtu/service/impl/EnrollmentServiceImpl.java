@@ -1,5 +1,6 @@
 package com.example.zhihuiqingtu.service.impl;
 
+import com.example.zhihuiqingtu.common.ErrorCode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.zhihuiqingtu.common.PageResponse;
@@ -66,17 +67,17 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         requireUser(currentUserId);
         ActivityMain activityMain = requireActivity(request.getActivityId());
         if (!ActivityStatusEnum.PUBLISHED.getCode().equals(activityMain.getActivityStatus())) {
-            throw new BusinessException(4201, "当前活动不可报名");
+            throw new BusinessException(ErrorCode.CONFLICT, "当前活动不可报名");
         }
         if (ActivityStatusEnum.FINISHED.getCode().equals(resolveDisplayStatus(activityMain))) {
-            throw new BusinessException(4202, "已结束活动不可报名");
+            throw new BusinessException(ErrorCode.CONFLICT, "已结束活动不可报名");
         }
         // 查重也改用当前登录学号：否则攻击者可以拿别人的学号来试探"某人是否已报名"，
         // 而且查重对象与实际写入的人不一致时会漏判/误判。
         if (activityEnrollRepository.selectCount(new LambdaQueryWrapper<ActivityEnroll>()
                 .eq(ActivityEnroll::getUserId, currentUserId)
                 .eq(ActivityEnroll::getActivityId, request.getActivityId())) > 0) {
-            throw new BusinessException(4204, "请勿重复报名");
+            throw new BusinessException(ErrorCode.CONFLICT, "请勿重复报名");
         }
 
         // ★ 关键顺序：先原子占用名额（拿到 activity_main 该行的 X 锁），再 INSERT 报名记录。
@@ -98,7 +99,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         // 限流人数的活动才需要；不限人数时 isLimited 为 false，直接跳过，避免误扣一个不存在的 key。
         // Redis 判定"满了"就直接返回，请求根本不会碰到 MySQL 的行锁 —— 这才是它挡掉的那部分压力。
         if (limited && !activityStockService.tryDeduct(request.getActivityId())) {
-            throw new BusinessException(4203, "活动报名人数已满");
+            throw new BusinessException(ErrorCode.CONFLICT, "活动报名人数已满");
         }
 
         // ── 第 2 层：DB 原子扣减（正确性，真正的防线）──
@@ -110,7 +111,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             if (limited) {
                 activityStockService.rollback(request.getActivityId());
             }
-            throw new BusinessException(4203, "活动报名人数已满");
+            throw new BusinessException(ErrorCode.CONFLICT, "活动报名人数已满");
         }
 
         ActivityEnroll enrollment = ActivityEnroll.builder()
@@ -131,7 +132,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             if (limited) {
                 activityStockService.rollback(request.getActivityId());
             }
-            throw new BusinessException(4204, "请勿重复报名");
+            throw new BusinessException(ErrorCode.CONFLICT, "请勿重复报名");
         }
 
         // 报名成功 → 三处缓存/统计要跟着动：
@@ -153,16 +154,16 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         // 原来 userId 是 @RequestParam 传进来的，攻击者只要把 userId 填成记录归属人就能取消别人的报名。
         // 现在这个值来自 JWT，改不了，才是真正的"仅可退出自己"。
         if (!enrollment.getUserId().equals(currentUser.requireUserId())) {
-            throw new BusinessException(4205, "仅可退出自己的活动报名记录");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅可退出自己的活动报名记录");
         }
 
         ActivityMain activityMain = requireActivity(enrollment.getActivityId());
         if (!EnrollmentStatusEnum.ENROLLED.getCode().equals(enrollment.getEnrollStatus())
                 || enrollment.getSignInTime() != null) {
-            throw new BusinessException(4206, "已完成的活动不能退出");
+            throw new BusinessException(ErrorCode.CONFLICT, "已完成的活动不能退出");
         }
         if (ActivityStatusEnum.FINISHED.getCode().equals(resolveDisplayStatus(activityMain))) {
-            throw new BusinessException(4207, "已结束活动不能退出");
+            throw new BusinessException(ErrorCode.CONFLICT, "已结束活动不能退出");
         }
 
         // 同样用原子 SQL，而不是 "读出来 -1 再 updateById"（那是同一个 check-then-act 陷阱，
@@ -188,21 +189,21 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         // ★ 签到人 = 当前登录用户，不再读请求参数里的 userId。
         // 签到会写签到时间并触发学分记录生成，若身份可伪造，就能替别人刷签到、刷学分。
         if (!enrollment.getUserId().equals(currentUser.requireUserId())) {
-            throw new BusinessException(4208, "仅可签到自己的活动报名记录");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅可签到自己的活动报名记录");
         }
         if (!EnrollmentStatusEnum.ENROLLED.getCode().equals(enrollment.getEnrollStatus())) {
-            throw new BusinessException(4209, "当前报名状态不允许签到");
+            throw new BusinessException(ErrorCode.CONFLICT, "当前报名状态不允许签到");
         }
 
         ActivityMain activityMain = requireActivity(enrollment.getActivityId());
         if (!ActivityStatusEnum.PUBLISHED.getCode().equals(activityMain.getActivityStatus())) {
-            throw new BusinessException(4210, "当前活动不可签到");
+            throw new BusinessException(ErrorCode.CONFLICT, "当前活动不可签到");
         }
         if (ActivityStatusEnum.FINISHED.getCode().equals(resolveDisplayStatus(activityMain))) {
-            throw new BusinessException(4211, "已结束活动不能签到");
+            throw new BusinessException(ErrorCode.CONFLICT, "已结束活动不能签到");
         }
         if (!Integer.valueOf(1).equals(activityMain.getSignInEnabled())) {
-            throw new BusinessException(4212, "活动暂未开放签到");
+            throw new BusinessException(ErrorCode.CONFLICT, "活动暂未开放签到");
         }
 
         enrollment.setEnrollStatus(EnrollmentStatusEnum.COMPLETED.getCode());
@@ -219,11 +220,11 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         // ★ 评价人 = 当前登录用户，不再读 request.getUserId()
         // 原写法允许把 userId 填成记录归属人，从而替别人提交评价（篡改他人的活动评分）。
         if (!enrollment.getUserId().equals(currentUser.requireUserId())) {
-            throw new BusinessException(4213, "仅可评价自己的活动记录");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅可评价自己的活动记录");
         }
         if (enrollment.getSignInTime() == null
                 && !EnrollmentStatusEnum.COMPLETED.getCode().equals(enrollment.getEnrollStatus())) {
-            throw new BusinessException(4214, "请先完成签到后再评价活动");
+            throw new BusinessException(ErrorCode.CONFLICT, "请先完成签到后再评价活动");
         }
 
         enrollment.setFeedbackScore(request.getFeedbackScore());
@@ -321,7 +322,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     private UserInfo requireUser(String userId) {
         UserInfo userInfo = userInfoRepository.selectById(userId);
         if (userInfo == null) {
-            throw new BusinessException(4009, "用户不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
         return userInfo;
     }
@@ -329,7 +330,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     private ActivityMain requireActivity(Long activityId) {
         ActivityMain activityMain = activityMainRepository.selectById(activityId);
         if (activityMain == null) {
-            throw new BusinessException(4100, "活动不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "活动不存在");
         }
         return activityMain;
     }
@@ -337,7 +338,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     private ActivityEnroll requireEnrollment(Long enrollId) {
         ActivityEnroll enrollment = activityEnrollRepository.selectById(enrollId);
         if (enrollment == null) {
-            throw new BusinessException(4200, "报名记录不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "报名记录不存在");
         }
         return enrollment;
     }

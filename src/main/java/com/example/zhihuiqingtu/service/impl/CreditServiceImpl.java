@@ -1,5 +1,6 @@
 package com.example.zhihuiqingtu.service.impl;
 
+import com.example.zhihuiqingtu.common.ErrorCode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.zhihuiqingtu.common.PageResponse;
@@ -119,7 +120,7 @@ public class CreditServiceImpl implements CreditService {
         UserInfo verifier = requireUser(reviewerUserId);
         if (!ReviewStatusEnum.APPROVED.getCode().equals(request.getVerifyStatus())
                 && !ReviewStatusEnum.REJECTED.getCode().equals(request.getVerifyStatus())) {
-            throw new BusinessException(4402, "审核状态仅支持通过或驳回");
+            throw new BusinessException(ErrorCode.CONFLICT, "审核状态仅支持通过或驳回");
         }
 
         CreditRecord creditRecord = requireCreditRecord(recordId);
@@ -127,7 +128,7 @@ public class CreditServiceImpl implements CreditService {
         // 权限判定逻辑本身不变（管理员/老师/活动发布者可审核），
         // 变的只是"审核人是谁"—— 现在来自认证上下文，伪造不了。
         if (!canReviewCredit(verifier, activityMain)) {
-            throw new BusinessException(4401, "仅管理员、老师或活动发布者可审核该学分记录");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅管理员、老师或活动发布者可审核该学分记录");
         }
 
         creditRecord.setVerifyUserId(reviewerUserId);
@@ -210,7 +211,7 @@ public class CreditServiceImpl implements CreditService {
     private CreditRecord requireCreditRecord(Long recordId) {
         CreditRecord creditRecord = creditRecordRepository.selectById(recordId);
         if (creditRecord == null) {
-            throw new BusinessException(4400, "学分记录不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "学分记录不存在");
         }
         return creditRecord;
     }
@@ -218,7 +219,7 @@ public class CreditServiceImpl implements CreditService {
     private ActivityMain requireActivity(Long activityId) {
         ActivityMain activityMain = activityMainRepository.selectById(activityId);
         if (activityMain == null) {
-            throw new BusinessException(4100, "活动不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "活动不存在");
         }
         return activityMain;
     }
@@ -226,7 +227,7 @@ public class CreditServiceImpl implements CreditService {
     private UserInfo requireUser(String userId) {
         UserInfo userInfo = userInfoRepository.selectById(userId);
         if (userInfo == null) {
-            throw new BusinessException(4009, "用户不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
         return userInfo;
     }

@@ -1,5 +1,6 @@
 package com.example.zhihuiqingtu.service.impl;
 
+import com.example.zhihuiqingtu.common.ErrorCode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.zhihuiqingtu.dto.user.UpdateInterestTagsRequest;
 import com.example.zhihuiqingtu.dto.user.UpdateUserProfileRequest;
@@ -92,7 +93,7 @@ public class UserServiceImpl implements UserService {
         //   2) SpEL 依赖参数名解析（需要编译保留参数名），显式代码不依赖编译配置，审计时也更直观。
         String currentUserId = currentUser.requireUserId();
         if (!currentUserId.equals(userId)) {
-            throw new BusinessException(4030, "只能修改自己的资料");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "只能修改自己的资料");
         }
         // 注意：先校验归属再查库，避免通过"用户不存在"与"无权限"两种不同错误码探测他人学号是否存在。
         UserInfo userInfo = requireUser(userId);
@@ -116,7 +117,7 @@ public class UserServiceImpl implements UserService {
         // （先删光对方的 user_interest_rel 再写入自己的标签）。现在只允许改自己的。
         String currentUserId = currentUser.requireUserId();
         if (!currentUserId.equals(userId)) {
-            throw new BusinessException(4030, "只能修改自己的兴趣标签");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "只能修改自己的兴趣标签");
         }
         UserInfo userInfo = requireUser(userId);
         List<Long> tagIds = new ArrayList<>(new LinkedHashSet<>(request.getTagIds()));
@@ -210,7 +211,7 @@ public class UserServiceImpl implements UserService {
         }
         // ★ 身份来自 Spring Security 上下文，而不是请求参数；两者不一致说明在拿别人的学号越权
         if (!currentUser.requireUserId().equals(userId)) {
-            throw new BusinessException(4030, errorMessage);
+            throw new BusinessException(ErrorCode.FORBIDDEN, errorMessage);
         }
     }
 
@@ -219,7 +220,7 @@ public class UserServiceImpl implements UserService {
             return;
         }
         if (activityTagRepository.selectBatchIds(tagIds).size() != tagIds.size()) {
-            throw new BusinessException(4010, "存在无效的兴趣标签");
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "存在无效的兴趣标签");
         }
     }
 
@@ -270,7 +271,7 @@ public class UserServiceImpl implements UserService {
                     .eq(UserInfo::getUserPhone, request.getUserPhone())
                     .last("LIMIT 1"));
             if (existingPhoneUser != null && !existingPhoneUser.getStudentNo().equals(userInfo.getStudentNo())) {
-                throw new BusinessException(4011, "手机号已被其他用户使用");
+                throw new BusinessException(ErrorCode.CONFLICT, "手机号已被其他用户使用");
             }
         }
         if (request.getUserEmail() != null && !request.getUserEmail().isBlank()) {
@@ -278,7 +279,7 @@ public class UserServiceImpl implements UserService {
                     .eq(UserInfo::getUserEmail, request.getUserEmail())
                     .last("LIMIT 1"));
             if (existingEmailUser != null && !existingEmailUser.getStudentNo().equals(userInfo.getStudentNo())) {
-                throw new BusinessException(4012, "邮箱已被其他用户使用");
+                throw new BusinessException(ErrorCode.CONFLICT, "邮箱已被其他用户使用");
             }
         }
     }
@@ -286,7 +287,7 @@ public class UserServiceImpl implements UserService {
     private UserInfo requireUser(String userId) {
         UserInfo userInfo = userInfoRepository.selectById(userId);
         if (userInfo == null) {
-            throw new BusinessException(4009, "用户不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
         return userInfo;
     }

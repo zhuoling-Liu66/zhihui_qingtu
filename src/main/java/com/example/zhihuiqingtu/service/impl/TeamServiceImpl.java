@@ -1,5 +1,6 @@
 package com.example.zhihuiqingtu.service.impl;
 
+import com.example.zhihuiqingtu.common.ErrorCode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.zhihuiqingtu.common.PageResponse;
@@ -67,7 +68,7 @@ public class TeamServiceImpl implements TeamService {
             requireActivity(request.getActivityId());
         }
         if (request.getMaxSize() < 0) {
-            throw new BusinessException(4301, "最大人数不能小于0");
+            throw new BusinessException(ErrorCode.CONFLICT, "最大人数不能小于0");
         }
 
         int currentSize = 1;
@@ -140,15 +141,15 @@ public class TeamServiceImpl implements TeamService {
         String applicantId = currentUser.requireUserId();
         requireUser(applicantId);
         if (TeamStatusEnum.DISMISSED.getCode().equals(teamMain.getTeamStatus())) {
-            throw new BusinessException(4302, "队伍已解散，无法加入");
+            throw new BusinessException(ErrorCode.CONFLICT, "队伍已解散，无法加入");
         }
         if (isFull(teamMain.getMaxSize(), teamMain.getCurrentSize())) {
-            throw new BusinessException(4308, "队伍人数已满");
+            throw new BusinessException(ErrorCode.CONFLICT, "队伍人数已满");
         }
         if (teamMemberRepository.selectCount(new LambdaQueryWrapper<TeamMember>()
                 .eq(TeamMember::getTeamId, teamId)
                 .eq(TeamMember::getUserId, applicantId)) > 0) {
-            throw new BusinessException(4303, "当前用户已在队伍中或申请待审核");
+            throw new BusinessException(ErrorCode.CONFLICT, "当前用户已在队伍中或申请待审核");
         }
         TeamMember teamMember = TeamMember.builder()
                 .teamId(teamId)
@@ -167,22 +168,22 @@ public class TeamServiceImpl implements TeamService {
         // 归属/权限校验逻辑本身不变，只是把"请求体说的队长"换成"JWT 证明的当前用户"：
         // 原来任何人填上队长的学号就能审批队员申请。
         if (!teamMain.getLeaderUserId().equals(currentUser.requireUserId())) {
-            throw new BusinessException(4304, "仅队长可审核成员申请");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅队长可审核成员申请");
         }
         TeamMember teamMember = requireTeamMember(memberId);
         if (!teamId.equals(teamMember.getTeamId())) {
-            throw new BusinessException(4305, "成员不属于当前队伍");
+            throw new BusinessException(ErrorCode.CONFLICT, "成员不属于当前队伍");
         }
         if (!TeamMemberStatusEnum.PENDING.getCode().equals(teamMember.getMemberStatus())) {
-            throw new BusinessException(4306, "仅待审核成员可以审批");
+            throw new BusinessException(ErrorCode.CONFLICT, "仅待审核成员可以审批");
         }
         if (!TeamMemberStatusEnum.JOINED.getCode().equals(request.getMemberStatus())
                 && !TeamMemberStatusEnum.REJECTED.getCode().equals(request.getMemberStatus())) {
-            throw new BusinessException(4307, "成员审核状态仅支持加入或驳回");
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "成员审核状态仅支持加入或驳回");
         }
         if (TeamMemberStatusEnum.JOINED.getCode().equals(request.getMemberStatus())
                 && isFull(teamMain.getMaxSize(), teamMain.getCurrentSize())) {
-            throw new BusinessException(4308, "队伍人数已满");
+            throw new BusinessException(ErrorCode.CONFLICT, "队伍人数已满");
         }
 
         teamMember.setMemberStatus(request.getMemberStatus());
@@ -204,7 +205,7 @@ public class TeamServiceImpl implements TeamService {
         TeamMain teamMain = requireTeam(teamId);
         TeamMember teamMember = requireTeamMember(memberId);
         if (!teamMain.getTeamId().equals(teamMember.getTeamId())) {
-            throw new BusinessException(4309, "成员不属于当前队伍");
+            throw new BusinessException(ErrorCode.CONFLICT, "成员不属于当前队伍");
         }
         // ★ 操作人 = 当前登录用户（原来读 request.getOperatorUserId()，客户端自报、可伪造）
         // "本人或队长可以退出"这条规则保留，但判断依据换成 JWT 证明的身份：
@@ -212,13 +213,13 @@ public class TeamServiceImpl implements TeamService {
         String operatorUserId = currentUser.requireUserId();
         if (!operatorUserId.equals(teamMember.getUserId())
                 && !operatorUserId.equals(teamMain.getLeaderUserId())) {
-            throw new BusinessException(4310, "仅本人或队长可以执行退出操作");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅本人或队长可以执行退出操作");
         }
         if (teamMain.getLeaderUserId().equals(teamMember.getUserId())) {
-            throw new BusinessException(4311, "队长不可直接退出队伍，请先解散队伍");
+            throw new BusinessException(ErrorCode.CONFLICT, "队长不可直接退出队伍，请先解散队伍");
         }
         if (!TeamMemberStatusEnum.JOINED.getCode().equals(teamMember.getMemberStatus())) {
-            throw new BusinessException(4312, "仅已加入成员可以退出队伍");
+            throw new BusinessException(ErrorCode.CONFLICT, "仅已加入成员可以退出队伍");
         }
         teamMemberRepository.deleteById(memberId);
         teamMain.setCurrentSize(Math.max(0, teamMain.getCurrentSize() - 1));
@@ -236,7 +237,7 @@ public class TeamServiceImpl implements TeamService {
         // ★ 操作人 = 当前登录用户（原来读 request.getOperatorUserId()，客户端自报、可伪造）
         // 解散会把该队全部成员记录逻辑删除，是可破坏性操作：原来填上队长学号即可解散别人的队伍。
         if (!teamMain.getLeaderUserId().equals(currentUser.requireUserId())) {
-            throw new BusinessException(4313, "仅队长可以解散队伍");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅队长可以解散队伍");
         }
         teamMain.setTeamStatus(TeamStatusEnum.DISMISSED.getCode());
         teamMain.setCurrentSize(0);
@@ -283,7 +284,7 @@ public class TeamServiceImpl implements TeamService {
     private TeamMain requireTeam(Long teamId) {
         TeamMain teamMain = teamMainRepository.selectById(teamId);
         if (teamMain == null) {
-            throw new BusinessException(4300, "队伍不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "队伍不存在");
         }
         return teamMain;
     }
@@ -291,7 +292,7 @@ public class TeamServiceImpl implements TeamService {
     private TeamMember requireTeamMember(Long memberId) {
         TeamMember teamMember = teamMemberRepository.selectById(memberId);
         if (teamMember == null) {
-            throw new BusinessException(4314, "队员记录不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "队员记录不存在");
         }
         return teamMember;
     }
@@ -299,7 +300,7 @@ public class TeamServiceImpl implements TeamService {
     private UserInfo requireUser(String userId) {
         UserInfo userInfo = userInfoRepository.selectById(userId);
         if (userInfo == null) {
-            throw new BusinessException(4009, "用户不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
         return userInfo;
     }
@@ -307,7 +308,7 @@ public class TeamServiceImpl implements TeamService {
     private ActivityMain requireActivity(Long activityId) {
         ActivityMain activityMain = activityMainRepository.selectById(activityId);
         if (activityMain == null) {
-            throw new BusinessException(4100, "活动不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "活动不存在");
         }
         return activityMain;
     }
