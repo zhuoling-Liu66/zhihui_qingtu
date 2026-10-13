@@ -190,7 +190,7 @@ const loadTeam = async () => {
 
 const applyJoin = async () => {
   // 不再传 userId：申请人 = 当前登录用户，后端从 JWT 取
-  await teamApi.join(route.params.id, {})
+  await teamApi.join(route.params.id)
   ElMessage.success('入队申请已提交')
   await loadTeam()
 }
@@ -207,7 +207,7 @@ const reviewMember = async (member, memberStatus) => {
 
 const exitTeam = async (member) => {
   // 不再传 operatorUserId：后端从 JWT 取身份，再校验"是你自己还是队长"
-  await teamApi.exit(route.params.id, member.memberId, {})
+  await teamApi.exit(route.params.id, member.memberId)
   ElMessage.success(member.userId === user.value.userId ? '已退出队伍' : '成员已移出')
   await loadTeam()
 }
@@ -219,7 +219,7 @@ const dismissTeam = async () => {
     cancelButtonText: '先保留',
   })
   // 不再传 operatorUserId：仅队长可解散，由后端判定
-  await teamApi.dismiss(route.params.id, {})
+  await teamApi.dismiss(route.params.id)
   ElMessage.success('队伍已解散')
   await loadTeam()
 }

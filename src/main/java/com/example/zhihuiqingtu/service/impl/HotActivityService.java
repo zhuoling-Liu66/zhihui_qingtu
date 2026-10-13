@@ -3,7 +3,6 @@ package com.example.zhihuiqingtu.service.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -103,26 +102,5 @@ public class HotActivityService {
             }
         }
         return List.copyOf(ids);
-    }
-
-    /**
-     * 查询某个活动的当前分数（累计报名人数，来自 Redis 的近似值）。
-     *
-     * @param activityId 活动主键
-     * @return 分数；榜单里没有该成员时返回 null
-     */
-    public Double getScore(Long activityId) {
-        return stringRedisTemplate.opsForZSet().score(HOT_RANK_KEY, String.valueOf(activityId));
-    }
-
-    /**
-     * 带分数读取榜单，仅用于调试/管理视角。
-     *
-     * @param limit 取前多少条
-     * @return 成员 → 分数的有序集合视图
-     */
-    public Set<ZSetOperations.TypedTuple<String>> listHotWithScores(int limit) {
-        return stringRedisTemplate.opsForZSet()
-                .reverseRangeWithScores(HOT_RANK_KEY, 0, limit - 1L);
     }
 }

@@ -2,9 +2,6 @@ package com.example.zhihuiqingtu.service;
 
 import com.example.zhihuiqingtu.common.PageResponse;
 import com.example.zhihuiqingtu.dto.team.CreateTeamRequest;
-import com.example.zhihuiqingtu.dto.team.DismissTeamRequest;
-import com.example.zhihuiqingtu.dto.team.ExitTeamMemberRequest;
-import com.example.zhihuiqingtu.dto.team.JoinTeamRequest;
 import com.example.zhihuiqingtu.dto.team.ReviewTeamMemberRequest;
 import com.example.zhihuiqingtu.dto.team.TeamQueryRequest;
 import com.example.zhihuiqingtu.vo.team.TeamResponse;
@@ -48,13 +45,12 @@ public interface TeamService {
     TeamResponse getTeamDetail(Long teamId);
 
     /**
-     * 申请加入队伍。
+     * 申请加入队伍。申请人取当前登录用户，不接受客户端传入的身份。
      *
-     * @param teamId  队伍主键
-     * @param request 入队申请参数
+     * @param teamId 队伍主键
      * @return 最新队伍详情
      */
-    TeamResponse applyJoin(Long teamId, JoinTeamRequest request);
+    TeamResponse applyJoin(Long teamId);
 
     /**
      * 审核队员申请。
@@ -67,21 +63,19 @@ public interface TeamService {
     TeamResponse reviewMember(Long teamId, Long memberId, ReviewTeamMemberRequest request);
 
     /**
-     * 队员退出队伍。
+     * 队员退出队伍。操作人取当前登录用户，规则为"本人或队长"。
      *
      * @param teamId   队伍主键
      * @param memberId 队员记录主键
-     * @param request  退出参数
      * @return 最新队伍详情
      */
-    TeamResponse exitTeam(Long teamId, Long memberId, ExitTeamMemberRequest request);
+    TeamResponse exitTeam(Long teamId, Long memberId);
 
     /**
-     * 解散队伍。
+     * 解散队伍。操作人取当前登录用户，仅队长可解散。
      *
-     * @param teamId  队伍主键
-     * @param request 解散参数
+     * @param teamId 队伍主键
      * @return 最新队伍详情
      */
-    TeamResponse dismissTeam(Long teamId, DismissTeamRequest request);
+    TeamResponse dismissTeam(Long teamId);
 }

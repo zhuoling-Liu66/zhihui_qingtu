@@ -144,17 +144,20 @@ export const teamApi = {
   create(payload) {
     return http.post('/teams', payload)
   },
-  join(teamId, payload) {
-    return http.post(`/teams/${teamId}/join`, payload)
+  /** 申请入队：无请求体，申请人由后端从令牌解析。 */
+  join(teamId) {
+    return http.post(`/teams/${teamId}/join`)
   },
   reviewMember(teamId, memberId, payload) {
     return http.patch(`/teams/${teamId}/members/${memberId}/review`, payload)
   },
-  exit(teamId, memberId, payload) {
-    return http.patch(`/teams/${teamId}/members/${memberId}/exit`, payload)
+  /** 退出/移出成员：无请求体，操作人由后端从令牌解析。 */
+  exit(teamId, memberId) {
+    return http.patch(`/teams/${teamId}/members/${memberId}/exit`)
   },
-  dismiss(teamId, payload) {
-    return http.patch(`/teams/${teamId}/dismiss`, payload)
+  /** 解散队伍：无请求体，仅队长可解散，由后端从令牌解析身份。 */
+  dismiss(teamId) {
+    return http.patch(`/teams/${teamId}/dismiss`)
   },
 }
 

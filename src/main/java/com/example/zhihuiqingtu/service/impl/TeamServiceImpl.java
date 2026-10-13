@@ -5,9 +5,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.zhihuiqingtu.common.PageResponse;
 import com.example.zhihuiqingtu.dto.team.CreateTeamRequest;
-import com.example.zhihuiqingtu.dto.team.DismissTeamRequest;
-import com.example.zhihuiqingtu.dto.team.ExitTeamMemberRequest;
-import com.example.zhihuiqingtu.dto.team.JoinTeamRequest;
 import com.example.zhihuiqingtu.dto.team.ReviewTeamMemberRequest;
 import com.example.zhihuiqingtu.dto.team.TeamQueryRequest;
 import com.example.zhihuiqingtu.entity.ActivityMain;
@@ -134,7 +131,7 @@ public class TeamServiceImpl implements TeamService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public TeamResponse applyJoin(Long teamId, JoinTeamRequest request) {
+    public TeamResponse applyJoin(Long teamId) {
         TeamMain teamMain = requireTeam(teamId);
         // ★ 申请人 = 当前登录用户（原来读 request.getUserId()，客户端自报、可伪造）
         // 否则填别人的学号就能替别人提交入队申请，冒充他人并污染队伍成员列表。
@@ -201,7 +198,7 @@ public class TeamServiceImpl implements TeamService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public TeamResponse exitTeam(Long teamId, Long memberId, ExitTeamMemberRequest request) {
+    public TeamResponse exitTeam(Long teamId, Long memberId) {
         TeamMain teamMain = requireTeam(teamId);
         TeamMember teamMember = requireTeamMember(memberId);
         if (!teamMain.getTeamId().equals(teamMember.getTeamId())) {
@@ -232,7 +229,7 @@ public class TeamServiceImpl implements TeamService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public TeamResponse dismissTeam(Long teamId, DismissTeamRequest request) {
+    public TeamResponse dismissTeam(Long teamId) {
         TeamMain teamMain = requireTeam(teamId);
         // ★ 操作人 = 当前登录用户（原来读 request.getOperatorUserId()，客户端自报、可伪造）
         // 解散会把该队全部成员记录逻辑删除，是可破坏性操作：原来填上队长学号即可解散别人的队伍。

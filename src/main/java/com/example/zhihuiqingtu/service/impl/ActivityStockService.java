@@ -39,8 +39,6 @@ public class ActivityStockService {
 
     /** 与 Lua 脚本返回码一一对应：扣减成功。 */
     private static final long RESULT_OK = 1L;
-    /** 与 Lua 脚本返回码一一对应：库存不足。 */
-    private static final long RESULT_SOLD_OUT = 0L;
     /** 与 Lua 脚本返回码一一对应：key 不存在（需要回源加载）。 */
     private static final long RESULT_NOT_INITIALIZED = -1L;
 

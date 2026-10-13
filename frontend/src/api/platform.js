@@ -118,21 +118,21 @@ export const teamApi = {
   create(payload) {
     return http.post('/teams', payload)
   },
-  /** 申请入队：请求体里不再需要 `userId`，申请人 = 当前登录用户。 */
-  join(teamId, payload) {
-    return http.post(`/teams/${teamId}/join`, payload)
+  /** 申请入队：无请求体，申请人 = 当前登录用户（后端从令牌解析）。 */
+  join(teamId) {
+    return http.post(`/teams/${teamId}/join`)
   },
   /** 审批成员：请求体里不再需要 `leaderUserId`，后端自行判定"你是不是该队队长"。 */
   reviewMember(teamId, memberId, payload) {
     return http.patch(`/teams/${teamId}/members/${memberId}/review`, payload)
   },
-  /** 退出/移出成员：请求体里不再需要 `operatorUserId`，后端自行判定"是你自己还是队长"。 */
-  exit(teamId, memberId, payload) {
-    return http.patch(`/teams/${teamId}/members/${memberId}/exit`, payload)
+  /** 退出/移出成员：无请求体，后端自行判定"是你自己还是队长"。 */
+  exit(teamId, memberId) {
+    return http.patch(`/teams/${teamId}/members/${memberId}/exit`)
   },
-  /** 解散队伍：请求体里不再需要 `operatorUserId`，仅队长可解散，由后端判定。 */
-  dismiss(teamId, payload) {
-    return http.patch(`/teams/${teamId}/dismiss`, payload)
+  /** 解散队伍：无请求体，仅队长可解散，由后端判定。 */
+  dismiss(teamId) {
+    return http.patch(`/teams/${teamId}/dismiss`)
   },
 }
 

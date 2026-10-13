@@ -3,9 +3,6 @@ package com.example.zhihuiqingtu.controller;
 import com.example.zhihuiqingtu.common.ApiResponse;
 import com.example.zhihuiqingtu.common.PageResponse;
 import com.example.zhihuiqingtu.dto.team.CreateTeamRequest;
-import com.example.zhihuiqingtu.dto.team.DismissTeamRequest;
-import com.example.zhihuiqingtu.dto.team.ExitTeamMemberRequest;
-import com.example.zhihuiqingtu.dto.team.JoinTeamRequest;
 import com.example.zhihuiqingtu.dto.team.ReviewTeamMemberRequest;
 import com.example.zhihuiqingtu.dto.team.TeamQueryRequest;
 import com.example.zhihuiqingtu.service.TeamService;
@@ -76,18 +73,16 @@ public class TeamController {
     /**
      * 申请加入队伍。
      * <p>
-     * 不再需要请求体里的 {@code userId}：申请人就是当前登录用户，
-     * 由服务层从 Spring Security 上下文读取。原来客户端可以填别人的学号替他人申请。
+     * 无请求体：申请人由 Spring Security 从 JWT 解析，
+     * 路径已定位目标队伍。原来请求体里的 {@code userId} 是客户端自报的，
+     * 可以填别人的学号替他人申请，现已移除。
      *
-     * @param teamId  队伍主键
-     * @param request 入队申请参数（不含身份字段）
+     * @param teamId 队伍主键
      * @return 最新队伍详情
      */
     @PostMapping("/{teamId}/join")
-    public ApiResponse<TeamResponse> applyJoin(
-            @PathVariable Long teamId,
-            @Valid @RequestBody JoinTeamRequest request) {
-        return ApiResponse.success("已提交入队申请", teamService.applyJoin(teamId, request));
+    public ApiResponse<TeamResponse> applyJoin(@PathVariable Long teamId) {
+        return ApiResponse.success("已提交入队申请", teamService.applyJoin(teamId));
     }
 
     /**
@@ -123,26 +118,21 @@ public class TeamController {
     @PatchMapping("/{teamId}/members/{memberId}/exit")
     public ApiResponse<TeamResponse> exitTeam(
             @PathVariable Long teamId,
-            @PathVariable Long memberId,
-            @Valid @RequestBody ExitTeamMemberRequest request) {
-        return ApiResponse.success("退出队伍成功", teamService.exitTeam(teamId, memberId, request));
+            @PathVariable Long memberId) {
+        return ApiResponse.success("退出队伍成功", teamService.exitTeam(teamId, memberId));
     }
 
     /**
      * 解散队伍。
      * <p>
-     * 不再需要请求体里的 {@code operatorUserId}：操作人就是当前登录用户。
-     * 解散是破坏性操作（会逻辑删除全队成员记录），原来填上队长学号即可解散他人队伍，
-     * 现在必须由 JWT 证明的队长本人发起。
+     * 无请求体：路径已定位目标队伍，操作人由 Spring Security 从 JWT 解析。
+     * 解散是破坏性操作（会逻辑删除全队成员记录），必须由队长本人发起。
      *
-     * @param teamId  队伍主键
-     * @param request 解散请求体（已无入参字段，请求体可为 {@code {}}）
+     * @param teamId 队伍主键
      * @return 最新队伍详情
      */
     @PatchMapping("/{teamId}/dismiss")
-    public ApiResponse<TeamResponse> dismissTeam(
-            @PathVariable Long teamId,
-            @Valid @RequestBody DismissTeamRequest request) {
-        return ApiResponse.success("队伍已解散", teamService.dismissTeam(teamId, request));
+    public ApiResponse<TeamResponse> dismissTeam(@PathVariable Long teamId) {
+        return ApiResponse.success("队伍已解散", teamService.dismissTeam(teamId));
     }
 }
