@@ -5,14 +5,16 @@ import com.example.zhihuiqingtu.common.ErrorCode;
 import com.example.zhihuiqingtu.common.JwtProperties;
 import com.example.zhihuiqingtu.security.CompositeBearerTokenResolver;
 import com.example.zhihuiqingtu.security.JwtBlacklistValidator;
-import jakarta.servlet.http.HttpServletRequest;
+import com.example.zhihuiqingtu.security.RoleClaimAuthoritiesConverter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -24,10 +26,13 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -188,7 +193,15 @@ public class SecurityConfig {
                  */
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(compositeBearerTokenResolver)
-                        .jwt(Customizer.withDefaults())
+                        /*
+                         * 把 JWT 的 role claim 映射成 GrantedAuthority。
+                         *
+                         * 不配置时的后果：认证对象上的权限集合恒为空，于是
+                         * CurrentUser.authorities() 恒返回空列表，
+                         * 且 @PreAuthorize("hasRole(...)"/"hasAuthority(...)") 会【永远拒绝】
+                         * —— 属于静默失效，不报错，只能靠排查发现。
+                         */
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
                         // 401 响应体保持项目统一的 ApiResponse 结构
                         .authenticationEntryPoint(authenticationEntryPoint()))
 
@@ -205,7 +218,33 @@ public class SecurityConfig {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 三、401 / 403 响应：与 GlobalExceptionHandler 使用同一套错误码
+    // 三、JWT claim → 权限的映射
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * 把 JWT 的 {@code role} claim 映射成 {@code ROLE_*} 权限。
+     *
+     * <p>签发端写入的 {@code role} 是<b>数字</b>角色编码（1 学生 / 2 管理员 / 3 老师），
+     * 而框架默认的 {@code JwtGrantedAuthoritiesConverter} 只识别字符串与集合类型，
+     * 遇到数字会<b>静默返回空权限</b>（详见 {@link RoleClaimAuthoritiesConverter}）。
+     * 因此这里使用自定义转换器。
+     *
+     * <p>权限名前缀为 {@code ROLE_}，与 {@code hasRole("ADMIN")} 的匹配约定一致；
+     * 若改用 {@code hasAuthority} 则不能带该前缀。
+     *
+     * @return 供 {@code oauth2ResourceServer} 使用的 JWT 认证转换器
+     */
+    @Bean
+    public Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(new RoleClaimAuthoritiesConverter());
+        // 用户名取 sub（学号），与 CurrentUser 的读取来源保持一致
+        converter.setPrincipalClaimName(JwtClaimNames.SUB);
+        return converter;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // 四、401 / 403 响应：与 GlobalExceptionHandler 使用同一套错误码
     // ══════════════════════════════════════════════════════════════
 
     /**
