@@ -160,22 +160,6 @@ CREATE TABLE IF NOT EXISTS credit_record (
     CONSTRAINT fk_credit_verify_user FOREIGN KEY (verify_user_id) REFERENCES user_info (student_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学分记录表';
 
-CREATE TABLE IF NOT EXISTS recommend_log (
-    log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '推荐日志主键',
-    user_id VARCHAR(20) NOT NULL COMMENT '用户学号或工号',
-    activity_id BIGINT UNSIGNED NOT NULL COMMENT '活动ID',
-    recommend_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '推荐时间',
-    is_click TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '是否点击 0-否 1-是',
-    is_enroll TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '是否报名 0-否 1-是',
-    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    delete_flag TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '软删除标记，0-正常 1-删除',
-    PRIMARY KEY (log_id),
-    KEY idx_recommend_user_time (user_id, recommend_time),
-    CONSTRAINT fk_recommend_user FOREIGN KEY (user_id) REFERENCES user_info (student_no),
-    CONSTRAINT fk_recommend_activity FOREIGN KEY (activity_id) REFERENCES activity_main (activity_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI推荐日志表';
-
 INSERT INTO activity_tag (tag_id, tag_name, tag_desc)
 VALUES
     (1, '第二课堂', '适用于第二课堂学分活动'),

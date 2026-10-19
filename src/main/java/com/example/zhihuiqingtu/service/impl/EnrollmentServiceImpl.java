@@ -62,7 +62,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     public EnrollmentResponse createEnrollment(CreateEnrollmentRequest request) {
         // ★ 报名人 = 当前登录用户，不再读 request.getUserId()
         // 原写法 requireUser(request.getUserId()) 只是"校验这个学号存在"，
-        // 并不校验"这个学号是不是你"，所以伪造别人的学号可以照样通过。
+
         String currentUserId = currentUser.requireUserId();
         requireUser(currentUserId);
         ActivityMain activityMain = requireActivity(request.getActivityId());

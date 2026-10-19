@@ -23,7 +23,6 @@
             <button class="nav-item" data-target="enrollment-panel">报名记录</button>
             <button class="nav-item" data-target="team-panel">组队协作</button>
             <button class="nav-item" data-target="credit-panel">学分管理</button>
-            <button class="nav-item" data-target="recommend-panel">AI 推荐</button>
         </nav>
         <section class="sidebar-card">
             <p class="label">当前登录</p>
@@ -371,47 +370,6 @@
                         <button type="submit" class="secondary-btn">提交审核</button>
                     </form>
                     <div id="credit-list" class="list-grid empty-state">暂无学分数据</div>
-                </article>
-            </div>
-        </section>
-
-        <section id="recommend-panel" class="panel reveal">
-            <div class="panel-grid two-col">
-                <article class="card accent-card">
-                    <div class="card-head">
-                        <p class="label">AI 推荐预留接口</p>
-                        <h3>发起推荐请求与记录推荐日志</h3>
-                    </div>
-                    <div id="recommend-tag-board" class="tag-chip-grid light empty-state">正在加载可用标签</div>
-                    <form id="recommend-form" class="form-grid">
-                        <input name="grade" placeholder="年级">
-                        <input name="major" placeholder="专业">
-                        <input name="interestTagIds" placeholder="兴趣标签ID，如 1,2,3">
-                        <input name="creditGap" type="number" min="0" step="0.05" placeholder="学分缺口">
-                        <input name="availableTimeSlots" placeholder="空闲时间，如 周三晚,周六上午">
-                        <input name="limit" type="number" min="1" max="20" value="10">
-                        <button type="submit" class="primary-btn">查询推荐</button>
-                    </form>
-                    <form id="recommend-log-form" class="form-grid compact bordered">
-                        <input name="activityId" type="number" placeholder="活动ID" required>
-                        <select name="isClick">
-                            <option value="1">已点击</option>
-                            <option value="0">未点击</option>
-                        </select>
-                        <select name="isEnroll">
-                            <option value="1">已报名</option>
-                            <option value="0">未报名</option>
-                        </select>
-                        <button type="submit" class="secondary-btn">记录推荐日志</button>
-                    </form>
-                </article>
-
-                <article class="card">
-                    <div class="card-head">
-                        <p class="label">推荐结果</p>
-                        <h3>推荐活动 ID、分数与理由</h3>
-                    </div>
-                    <div id="recommend-result" class="result-box empty-state">等待发起推荐请求</div>
                 </article>
             </div>
         </section>

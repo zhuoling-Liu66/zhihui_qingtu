@@ -48,4 +48,9 @@ public class LoginResponse {
      * 年级。
      */
     private String grade;
+
+    /**
+     * 访问令牌，用于后续请求认证。
+     */
+    private String token;
 }

@@ -9,6 +9,10 @@ logs/
 # 本地开发专用配置（含真实 JWT 密钥等本机私密值），不提交
 application-local.properties
 src/main/resources/application-local.properties
+# 技术文档与学习笔记只在本地保留，不纳入版本库
+docs/
+# 项目管理表格（个人进度材料），不提交
+*.xlsx
 # 简历等个人材料（含手机号、邮箱等个人信息），不提交
 docs/*简历*.docx
 docs/*简历*.pdf

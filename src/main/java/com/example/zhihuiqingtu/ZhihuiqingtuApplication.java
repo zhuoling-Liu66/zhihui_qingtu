@@ -5,6 +5,7 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ConfigurableApplicationContext;
 
 /**
  * 项目启动入口。
@@ -25,6 +26,7 @@ public class ZhihuiqingtuApplication {
      * @param args 启动参数，一般开发阶段不会手动传递
      */
     public static void main(String[] args) {
-        SpringApplication.run(ZhihuiqingtuApplication.class, args);
+        ConfigurableApplicationContext run = SpringApplication.run(ZhihuiqingtuApplication.class, args);
+        System.out.println("111");
     }
 }

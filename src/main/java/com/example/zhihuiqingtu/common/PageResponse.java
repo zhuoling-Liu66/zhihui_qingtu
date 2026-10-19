@@ -25,7 +25,7 @@ public class PageResponse<T> {
 
     /**
      * 当前页码。
-     * 这里统一按前端习惯从 0 开始计数。
+     * 从 0 开始计数。
      */
     private Integer pageNo;
 
