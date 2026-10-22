@@ -13,6 +13,7 @@ import com.example.zhihuiqingtu.ai.support.AiConstants;
 import com.example.zhihuiqingtu.ai.support.AiTextUtils;
 import com.example.zhihuiqingtu.ai.support.AiToolEventSink;
 import com.example.zhihuiqingtu.ai.support.SseEventWriter;
+import com.example.zhihuiqingtu.ai.support.StoredExtras;
 import com.example.zhihuiqingtu.ai.support.SystemPromptFactory;
 import com.example.zhihuiqingtu.ai.tool.AiToolDependencies;
 import com.example.zhihuiqingtu.ai.tool.AiToolSet;
@@ -258,8 +259,46 @@ public class AiChatService {
     private List<AiChatTurn> buildHistory(Long conversationId) {
         return conversationService.recentHistory(conversationId, properties.getChat().getHistoryWindow())
                 .stream()
-                .map(message -> new AiChatTurn(message.getRole(), message.getContent()))
+                .map(message -> new AiChatTurn(message.getRole(), withCardIds(message)))
                 .toList();
+    }
+
+    /**
+     * 给历史里的助手消息补上"上一轮展示过哪些活动"。
+     *
+     * <p><b>为什么需要这一步</b>：模型只能看到文本历史，看不到卡片。
+     * 用户说"帮我报名刚才那个业务回归活动"时，如果历史里没有 ID，模型只能要么再查一次、
+     * 要么放弃——实测它会放弃并道歉。把上一轮的 ID 以注释形式附在历史文本末尾，
+     * 模型就能直接引用；这段后缀只进 prompt，不进数据库、也不展示给用户。
+     */
+    private String withCardIds(AiMessage message) {
+        String content = message.getContent() == null ? "" : message.getContent();
+        if (!AiConstants.ROLE_ASSISTANT.equals(message.getRole())
+                || message.getCards() == null || message.getCards().isBlank()) {
+            return content;
+        }
+        try {
+            StoredExtras extras = objectMapper.readValue(message.getCards(), StoredExtras.class);
+            CardsVO cards = extras == null ? null : extras.getCards();
+            if (cards == null || cards.hasNoCards()) {
+                return content;
+            }
+            List<String> parts = new ArrayList<>();
+            if (cards.getActivities() != null) {
+                for (ActivityCardVO card : cards.getActivities()) {
+                    parts.add("id=" + card.getActivityId() + " " + card.getActivityTitle());
+                }
+            }
+            if (cards.getTeams() != null) {
+                for (TeamCardVO card : cards.getTeams()) {
+                    parts.add("teamId=" + card.getTeamId() + " " + card.getTeamName());
+                }
+            }
+            return parts.isEmpty() ? content : content + "\n\n[上一轮展示过的条目：" + String.join("；", parts) + "]";
+        } catch (RuntimeException exception) {
+            log.debug("解析历史卡片失败，忽略：{}", exception.getMessage());
+            return content;
+        }
     }
 
     private AiChatContext buildContext(String userId, ChatRequest request, List<AiChatTurn> history) {

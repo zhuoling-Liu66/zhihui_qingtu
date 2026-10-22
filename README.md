@@ -103,7 +103,7 @@ npm run dev
 
 ```powershell
 $env:AI_API_KEY="sk-..."          # 不配则走降级
-$env:AI_MODEL="deepseek-v4-flash"  # 默认值
+$env:AI_MODEL="deepseek-flash"     # 默认值，需与 /models 返回的 id 一致
 ```
 
 可选项见 `.env.example`：`AI_ENABLED`、`AI_BASE_URL`、`AI_DAILY_TOKENS`、`AI_RATE_PER_MINUTE`。

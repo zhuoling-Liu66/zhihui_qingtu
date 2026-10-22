@@ -64,7 +64,7 @@ public class AiToolSet {
 
     @Tool(name = "search_activities",
             description = "按条件筛选校园活动。用户提到时间、类型、学分类型、地点、关键词时优先调用。"
-                    + "只返回未来仍可报名、且用户尚未报名的活动。limit 默认 10，最多 20。")
+                    + "只返回未来仍可报名、且用户尚未报名的活动。limit 默认 6，最多 6。")
     public String searchActivities(
             @ToolParam(description = "标题/描述/地点关键词，可为空", required = false) String keyword,
             @ToolParam(description = "活动类型：1第二课堂 2志愿服务 3运动健身 4兴趣团建", required = false) Integer type,
@@ -73,7 +73,7 @@ public class AiToolSet {
             @ToolParam(description = "开始时间上界，格式 yyyy-MM-dd HH:mm 或 yyyy-MM-dd", required = false) String dateTo,
             @ToolParam(description = "学分类型：1创新创业 2智育 3德育 4体育 5美育 6劳育", required = false) Integer creditType,
             @ToolParam(description = "只看还有名额的，默认 true", required = false) Boolean onlyAvailable,
-            @ToolParam(description = "返回条数，默认 10，最多 20", required = false) Integer limit) {
+            @ToolParam(description = "返回条数，默认 6，最多 6", required = false) Integer limit) {
 
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("keyword", keyword);
@@ -95,7 +95,8 @@ public class AiToolSet {
                     creditType,
                     onlyAvailable == null || onlyAvailable,
                     true);
-            int safeLimit = limit == null ? 10 : Math.max(1, Math.min(limit, 20));
+            // 最多 6 条：既够模型挑选 3 个推荐，又不至于让卡片把聊天窗口刷屏
+            int safeLimit = limit == null ? 6 : Math.max(1, Math.min(limit, 6));
             List<RecommendationEngine.ActivityCandidate> candidates =
                     deps.recommendationEngine.recommendActivities(userId, filter, safeLimit);
             List<ActivityCardVO> cards = candidates.stream().map(deps.recommendationEngine::toActivityCard).toList();
