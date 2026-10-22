@@ -46,6 +46,14 @@ public final class ErrorCode {
     /** 未预期的服务端异常。 */
     public static final int SYSTEM_ERROR = 500;
 
+    /**
+     * 依赖的外部服务当前不可用（AI 助手未启用、模型超时、熔断中）。
+     *
+     * <p>与 {@link #SYSTEM_ERROR} 的区别在于"责任边界"：500 是本服务自己崩了，
+     * 503 是本服务正常但下游不可用，客户端稍后重试有意义。
+     */
+    public static final int SERVICE_UNAVAILABLE = 503;
+
     /** 成功。 */
     public static final int SUCCESS = 0;
 

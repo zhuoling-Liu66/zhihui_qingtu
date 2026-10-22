@@ -16,7 +16,9 @@ import org.springframework.context.ConfigurableApplicationContext;
  */
 @SpringBootApplication
 // 扫描 repository 包下的 Mapper 接口，让 MyBatis-Plus 为它们创建代理对象。
-@MapperScan("com.example.zhihuiqingtu.repository")
+// AI 模块的 Mapper 放在 ai.repository 子包：显式 @MapperScan 会关闭 MyBatis 的自动扫描，
+// 所以必须把新包也列进来，否则启动时报 "No qualifying bean of type ...Repository"。
+@MapperScan({"com.example.zhihuiqingtu.repository", "com.example.zhihuiqingtu.ai.repository"})
 @EnableConfigurationProperties(JwtProperties.class)
 public class ZhihuiqingtuApplication {
 

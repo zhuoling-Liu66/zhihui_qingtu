@@ -88,6 +88,42 @@ npm run dev
 
 前端默认由 Vite 输出本地访问地址。
 
+## AI 助手（可选功能）
+
+在原有活动/组队业务之上提供对话式助手：自然语言找活动、按条件筛选、个性化推荐活动与队伍，
+并在用户**明确确认后**代为报名。核心设计是「AI 只读 + 两阶段确认」：
+模型没有任何直接写库的工具，报名由用户点确认后走既有 `EnrollmentService`。
+
+- 后端：Spring AI 2.0 + DeepSeek（OpenAI 兼容），工具调用 + SSE 流式
+- 前端：`frontend_v2` 右下角悬浮球 → 聊天抽屉，活动/队伍卡片可跳转，报名有确认卡片
+- **不配 API Key 也能启动**：启动时打一条 WARN，聊天返回规则降级结果（`degraded=true`），
+  推荐位完全可用
+
+### 配置
+
+```powershell
+$env:AI_API_KEY="sk-..."          # 不配则走降级
+$env:AI_MODEL="deepseek-v4-flash"  # 默认值
+```
+
+可选项见 `.env.example`：`AI_ENABLED`、`AI_BASE_URL`、`AI_DAILY_TOKENS`、`AI_RATE_PER_MINUTE`。
+
+### 数据库
+
+```bash
+mysql -u root -p campus_activity_platform < docs/sql/ai_assistant.sql
+```
+
+只新增 5 张 `ai_` 前缀表，不改动任何既有表，可独立回滚。
+
+### 说明
+
+- 模型调用失败、超时、未配置 Key 时返回 **200 + `degraded=true`**（附规则推荐），
+  不会把错误码甩给用户；只有限流/超配额才返回 429。
+- 启动端口以 `application.properties` 的 `server.port` 为准（默认 8080）。
+  若本机 8080 被其他服务占用，请先停掉它或改用 `--server.port=xxxx`，
+  并同步修改 `frontend_v2/vite.config.js` 里的代理目标。
+
 ## 团队协作建议
 
 - `main` 分支保持稳定，可以运行后再合并代码。

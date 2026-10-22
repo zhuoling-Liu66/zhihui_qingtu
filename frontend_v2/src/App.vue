@@ -3,6 +3,8 @@
     <AppHeader @open-auth="authVisible = true" />
     <router-view />
     <AuthDialog v-model="authVisible" />
+    <!-- AI 助手：悬浮球 + 抽屉。未登录时点击会触发 require-auth 弹出登录框 -->
+    <AiAssistant @require-auth="authVisible = true" />
   </div>
 </template>
 
@@ -10,6 +12,7 @@
 import { onMounted, ref } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import AuthDialog from './components/AuthDialog.vue'
+import AiAssistant from './components/ai/AiAssistant.vue'
 import { setUnauthorizedHandler } from '@/composables/useSession'
 
 const authVisible = ref(false)
