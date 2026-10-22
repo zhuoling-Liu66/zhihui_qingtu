@@ -116,6 +116,19 @@ mysql -u root -p campus_activity_platform < docs/sql/ai_assistant.sql
 
 只新增 5 张 `ai_` 前缀表，不改动任何既有表，可独立回滚。
 
+### 看到「AI 助手暂时不可用」怎么办
+
+这是**降级兜底**，不是报错：后端没拿到可用的 Key、或上游调用失败时，会改用规则引擎推荐，
+并在回复里注明。按顺序检查：
+
+1. 运行环境里是否有 `AI_API_KEY`；或在 `application-local.properties`（已 gitignore）里
+   配 `spring.ai.deepseek.api-key=sk-...`；
+2. 是否以 `local` profile 启动（`-Dspring.profiles.active=local`），否则上面那个文件不会被加载；
+3. 模型名是否与 `GET https://api.deepseek.com/models` 返回的 id 一致（当前默认 `deepseek-flash`）；
+4. 改完配置必须**重启应用**，Spring 不会热加载数据源配置。
+
+> 判断依据：响应里的 `degraded=true`，且 `usage.totalTokens=0`。
+
 ### 说明
 
 - 模型调用失败、超时、未配置 Key 时返回 **200 + `degraded=true`**（附规则推荐），
