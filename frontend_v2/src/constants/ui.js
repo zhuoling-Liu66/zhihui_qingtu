@@ -217,26 +217,17 @@ export const railPanels = [
 export const featureModules = [
   {
     title: '第二课堂',
-    subtitle: '按学分缺口找最合适的活动',
-    badge: '学分专区',
-    accent: 'sunrise',
-    stat: '6 类学分类型',
+    subtitle: '按学分类型和缺口找活动',
     slug: 'second-class',
   },
   {
     title: '志愿服务',
-    subtitle: '服务时长、公益活动一键筛选',
-    badge: '时长专区',
-    accent: 'aqua',
-    stat: '支持时长记录',
+    subtitle: '按服务时长和地点筛选',
     slug: 'volunteer',
   },
   {
     title: '组队邀请',
-    subtitle: '球搭子、搭子社交、校园团建',
-    badge: '搭子专区',
-    accent: 'mint',
-    stat: '运动与团建并行',
+    subtitle: '球搭子、团建、临时搭子',
     slug: 'team',
   },
 ]
@@ -263,6 +254,58 @@ export const activityStatusMap = {
   2: '进行中',
   3: '已结束',
   4: '已取消',
+}
+
+/* 用户角色（user_role）：注册只允许学生，2/3 由后台分配 */
+export const userRoleMap = {
+  1: '学生',
+  2: '管理员',
+  3: '老师',
+  4: '运营人员',
+}
+
+/* 活动审核状态（review_status）：所有活动发布后都要先审核 */
+export const activityReviewStatusMap = {
+  0: '待审核',
+  1: '审核通过',
+  2: '审核驳回',
+}
+
+/* 发布权限（publisher_status）：独立于角色，开通后才能发布活动 */
+export const publisherStatusMap = {
+  0: '未开通',
+  1: '已开通',
+}
+
+/* 发布权限申请/变更记录类型：学生申请与管理员直接调整共用一张留痕表 */
+export const publisherRecordTypeMap = {
+  1: '学生申请',
+  2: '管理员开通',
+  3: '管理员收回',
+}
+
+/* 发布权限记录状态：0 待审批 / 1 已通过 / 2 已驳回 / 3 已关闭 */
+export const publisherRecordStatusMap = {
+  0: '待审批',
+  1: '已通过',
+  2: '已驳回',
+  3: '已关闭',
+}
+
+/* 报名状态（enroll_status）：1=已报名 3=已签到 4=已完成 */
+export const enrollStatusMap = {
+  1: '已报名',
+  3: '已签到',
+  4: '已完成',
+}
+
+/* 发放状态（verify_status）：签退后生成待确认记录，发布者确认后计入个人数据；
+   灵活志愿时长由发布者录入后提交管理员审核（3=待审核） */
+export const verifyStatusMap = {
+  0: '待确认',
+  1: '已发放',
+  2: '不发放',
+  3: '待审核',
 }
 
 export const sectionConfigs = {

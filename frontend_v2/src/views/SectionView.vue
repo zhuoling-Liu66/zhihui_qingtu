@@ -7,7 +7,7 @@
         <p>{{ config.description }}</p>
         <div class="section-hero__chips">
           <span>{{ config.subtitle }}</span>
-          <span>{{ filteredActivities.length }} 条活动</span>
+          <span>{{ totalElements }} 条活动</span>
           <span v-if="config.showTeams">{{ teams.length }} 个队伍</span>
         </div>
       </div>
@@ -34,8 +34,8 @@
               type="button"
               @click="router.push({ name: 'section', params: { slug: entry.slug } })"
             >
-              <span>{{ entry.icon }}</span>
-              {{ entry.label }}
+              <span class="topic-tab__symbol">{{ entry.icon }}</span>
+              <span class="topic-tab__label">{{ entry.label }}</span>
             </button>
           </div>
         </section>
@@ -52,12 +52,26 @@
 
         <div class="section-card-grid">
           <ActivityCard
-            v-for="activity in displayedActivities"
+            v-for="activity in activities"
             :key="activity.activityId"
             :activity="activity"
             dense
           />
         </div>
+
+        <p v-if="!loading && !activities.length" class="search-empty">
+          当前专题下没有找到匹配的活动。
+        </p>
+
+        <el-pagination
+          v-if="totalElements > pageSize"
+          class="search-pagination"
+          layout="prev, pager, next, total"
+          :current-page="pageNo + 1"
+          :page-size="pageSize"
+          :total="totalElements"
+          @current-change="handlePageChange"
+        />
 
         <section v-if="config.showTeams" class="section-team-block card-surface">
           <div class="section-head section-head--compact">
@@ -96,7 +110,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ActivityCard from '@/components/ActivityCard.vue'
 import { activityApi, teamApi } from '@/api/platform'
 import { homeTopicEntries } from '@/constants/ui'
-import { filterActivitiesBySection, getSectionConfig, matchKeyword } from '@/utils/catalog'
+import { getSectionConfig } from '@/utils/catalog'
 
 const route = useRoute()
 const router = useRouter()
@@ -105,21 +119,58 @@ const activities = ref([])
 const teams = ref([])
 const keyword = ref(route.query.q || '')
 
+// 专题筛选和关键词都交给后端，分页按后端返回的总数走。
+// 以前是"先取 48 条 + 前端过滤"，排在第 49 条之后的活动在专题页永远看不到。
+const pageNo = ref(0)
+const pageSize = 12
+const totalElements = ref(0)
+const loading = ref(false)
+let loadToken = 0
+
 const config = computed(() => getSectionConfig(route.params.slug))
 const theme = computed(() => config.value.theme || 'gold')
-const filteredActivities = computed(() => filterActivitiesBySection(activities.value, route.params.slug))
-const displayedActivities = computed(() =>
-  filteredActivities.value.filter((activity) => matchKeyword(activity, keyword.value)),
-)
 
-const loadData = async () => {
-  const [activityPage, teamPage] = await Promise.all([
-    activityApi.list({ pageNo: 0, pageSize: 48 }),
-    teamApi.list({ pageNo: 0, pageSize: 12 }),
-  ])
-  activities.value = activityPage.records || []
-  teams.value = teamPage.records || []
+const loadActivities = async () => {
+  const requestId = ++loadToken
+  loading.value = true
+  try {
+    const page = await activityApi.list({
+      pageNo: pageNo.value,
+      pageSize,
+      // 白名单专题标识：后端只认固定值，不开放任意查询表达式
+      section: route.params.slug,
+      keyword: keyword.value.trim() || undefined,
+    })
+    if (requestId !== loadToken) return
+    activities.value = page.records || []
+    totalElements.value = page.totalElements || 0
+  } finally {
+    if (requestId === loadToken) {
+      loading.value = false
+    }
+  }
 }
+
+const loadTeams = async () => {
+  // 队伍列表保持原来的小范围展示，本次不扩 scope
+  const page = await teamApi.list({ pageNo: 0, pageSize: 12 })
+  teams.value = page.records || []
+}
+
+const handlePageChange = (current) => {
+  pageNo.value = current - 1
+  loadActivities()
+}
+
+let keywordTimer = null
+watch(keyword, () => {
+  clearTimeout(keywordTimer)
+  // 输入时防抖，避免每敲一个字都打一次接口
+  keywordTimer = setTimeout(() => {
+    pageNo.value = 0
+    loadActivities()
+  }, 300)
+})
 
 watch(
   () => route.query.q,
@@ -132,8 +183,13 @@ watch(
   () => route.params.slug,
   () => {
     keyword.value = route.query.q || ''
+    pageNo.value = 0
+    // 切换专题必须重新查询：规则在后端，不能复用上一个专题的结果
+    loadActivities()
   },
 )
 
-onMounted(loadData)
+onMounted(async () => {
+  await Promise.all([loadActivities(), loadTeams()])
+})
 </script>

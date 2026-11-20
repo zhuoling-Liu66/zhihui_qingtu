@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import com.example.zhihuiqingtu.common.PageResponse;
 
 /**
  * 历史消息游标分页结果。

@@ -107,12 +107,32 @@ export const enrollApi = {
   cancel(enrollId) {
     return http.delete(`/enrollments/${enrollId}`)
   },
-  /** 签到：同上。 */
+  /** 签到：同上。签到后状态为“已签到”，需签退才完成。 */
   signIn(enrollId) {
     return http.patch(`/enrollments/${enrollId}/sign-in`)
   },
+  /** 签退：同上。签退后状态为“已完成”，并生成待发布者确认的发放记录。 */
+  signOut(enrollId) {
+    return http.patch(`/enrollments/${enrollId}/sign-out`)
+  },
   feedback(enrollId, payload) {
     return http.patch(`/enrollments/${enrollId}/feedback`, payload)
+  },
+  /** 参与人员名单（仅活动发布者或管理员）。 */
+  activityParticipants(activityId, params) {
+    return http.get(`/enrollments/activity/${activityId}`, { params })
+  },
+  /** 发布者修正考勤：MARK_SIGN_IN / MARK_SIGN_OUT / REVERT_SIGN_IN / REVERT_SIGN_OUT。 */
+  updateAttendance(enrollId, payload) {
+    return http.patch(`/enrollments/${enrollId}/attendance`, payload)
+  },
+  /** 发布者编辑某人的发放（学分/志愿时长与发放结论）。 */
+  updateAward(enrollId, payload) {
+    return http.patch(`/enrollments/${enrollId}/award`, payload)
+  },
+  /** 一键确认活动全部待发放记录。 */
+  confirmAwards(activityId) {
+    return http.patch(`/enrollments/activity/${activityId}/awards/confirm`)
   },
 }
 
@@ -133,6 +153,7 @@ export const userApi = {
     return http.put(`/users/${encodeURIComponent(userId)}/interest-tags`, payload)
   },
 }
+
 
 export const teamApi = {
   list(params) {
@@ -173,9 +194,5 @@ export const creditApi = {
    */
   statistics() {
     return http.get('/credits/statistics')
-  },
-  /** 审核学分：审核人由后端从 JWT 取，请求体里不需要（也不应传）`verifyUserId`。 */
-  review(recordId, payload) {
-    return http.patch(`/credits/${recordId}/review`, payload)
   },
 }

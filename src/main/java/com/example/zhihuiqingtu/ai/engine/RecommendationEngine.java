@@ -4,32 +4,32 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.zhihuiqingtu.ai.config.AiProperties;
 import com.example.zhihuiqingtu.ai.vo.ActivityCardVO;
 import com.example.zhihuiqingtu.ai.vo.TeamCardVO;
-import com.example.zhihuiqingtu.entity.ActivityEnroll;
-import com.example.zhihuiqingtu.entity.ActivityMain;
-import com.example.zhihuiqingtu.entity.ActivityTag;
-import com.example.zhihuiqingtu.entity.ActivityTagRel;
-import com.example.zhihuiqingtu.entity.CreditRecord;
-import com.example.zhihuiqingtu.entity.TeamMain;
-import com.example.zhihuiqingtu.entity.TeamMember;
-import com.example.zhihuiqingtu.entity.UserInfo;
-import com.example.zhihuiqingtu.entity.UserInterestRel;
-import com.example.zhihuiqingtu.enums.ActivityStatusEnum;
-import com.example.zhihuiqingtu.enums.ActivityTypeEnum;
-import com.example.zhihuiqingtu.enums.CreditTypeEnum;
-import com.example.zhihuiqingtu.enums.ReviewStatusEnum;
-import com.example.zhihuiqingtu.enums.TeamMemberStatusEnum;
-import com.example.zhihuiqingtu.enums.TeamStatusEnum;
-import com.example.zhihuiqingtu.repository.ActivityEnrollRepository;
-import com.example.zhihuiqingtu.repository.ActivityMainRepository;
-import com.example.zhihuiqingtu.repository.ActivityTagRelRepository;
-import com.example.zhihuiqingtu.repository.ActivityTagRepository;
-import com.example.zhihuiqingtu.repository.CreditRecordRepository;
-import com.example.zhihuiqingtu.repository.TeamMainRepository;
-import com.example.zhihuiqingtu.repository.TeamMemberRepository;
-import com.example.zhihuiqingtu.repository.UserInfoRepository;
-import com.example.zhihuiqingtu.repository.UserInterestRelRepository;
-import com.example.zhihuiqingtu.service.impl.HotActivityService;
-import com.example.zhihuiqingtu.vo.activity.ActivityTagVO;
+import com.example.zhihuiqingtu.enrollment.entity.ActivityEnroll;
+import com.example.zhihuiqingtu.activity.entity.ActivityMain;
+import com.example.zhihuiqingtu.activity.entity.ActivityTag;
+import com.example.zhihuiqingtu.activity.entity.ActivityTagRel;
+import com.example.zhihuiqingtu.award.entity.CreditRecord;
+import com.example.zhihuiqingtu.team.entity.TeamMain;
+import com.example.zhihuiqingtu.team.entity.TeamMember;
+import com.example.zhihuiqingtu.user.entity.UserInfo;
+import com.example.zhihuiqingtu.user.entity.UserInterestRel;
+import com.example.zhihuiqingtu.activity.enums.ActivityStatusEnum;
+import com.example.zhihuiqingtu.activity.enums.ActivityTypeEnum;
+import com.example.zhihuiqingtu.award.enums.CreditTypeEnum;
+import com.example.zhihuiqingtu.activity.enums.ReviewStatusEnum;
+import com.example.zhihuiqingtu.team.enums.TeamMemberStatusEnum;
+import com.example.zhihuiqingtu.team.enums.TeamStatusEnum;
+import com.example.zhihuiqingtu.enrollment.repository.ActivityEnrollRepository;
+import com.example.zhihuiqingtu.activity.repository.ActivityMainRepository;
+import com.example.zhihuiqingtu.activity.repository.ActivityTagRelRepository;
+import com.example.zhihuiqingtu.activity.repository.ActivityTagRepository;
+import com.example.zhihuiqingtu.award.repository.CreditRecordRepository;
+import com.example.zhihuiqingtu.team.repository.TeamMainRepository;
+import com.example.zhihuiqingtu.team.repository.TeamMemberRepository;
+import com.example.zhihuiqingtu.user.repository.UserInfoRepository;
+import com.example.zhihuiqingtu.user.repository.UserInterestRelRepository;
+import com.example.zhihuiqingtu.activity.support.HotActivityService;
+import com.example.zhihuiqingtu.activity.vo.ActivityTagVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -112,6 +112,7 @@ public class RecommendationEngine {
 
         LambdaQueryWrapper<ActivityMain> wrapper = new LambdaQueryWrapper<ActivityMain>()
                 .eq(ActivityMain::getActivityStatus, ActivityStatusEnum.PUBLISHED.getCode())
+                .eq(ActivityMain::getReviewStatus, ReviewStatusEnum.APPROVED.getCode())
                 .gt(ActivityMain::getEndTime, now)
                 .orderByAsc(ActivityMain::getStartTime)
                 .last("LIMIT " + RECALL_LIMIT);
@@ -355,7 +356,8 @@ public class RecommendationEngine {
         List<TeamCandidate> candidates = new ArrayList<>();
         for (TeamMain team : teams) {
             ActivityMain activity = team.getActivityId() == null ? null : activityMap.get(team.getActivityId());
-            if (activity != null && (activity.getEndTime() == null
+            if (activity != null && (!ReviewStatusEnum.APPROVED.getCode().equals(activity.getReviewStatus())
+                    || activity.getEndTime() == null
                     || !activity.getEndTime().isAfter(LocalDateTime.now()))) {
                 continue;
             }

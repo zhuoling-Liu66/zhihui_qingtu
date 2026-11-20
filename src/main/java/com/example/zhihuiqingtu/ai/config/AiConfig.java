@@ -8,6 +8,8 @@ import org.springframework.security.concurrent.DelegatingSecurityContextExecutor
 
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
+import com.example.zhihuiqingtu.ai.client.SpringAiChatGateway;
+import com.example.zhihuiqingtu.security.CurrentUser;
 
 /**
  * AI 模块的基础设施配置。

@@ -11,7 +11,7 @@
           <div>
             <p class="section-head__kicker">参与记录</p>
             <h1>我参加的活动</h1>
-            <p>现在采用“签到即完成”的规则。第二课堂活动签到后会直接生成待审核学分记录，之后可选补充活动评价。</p>
+            <p>现在采用「签到 → 签退 → 发布者确认发放」的规则：签退后自动生成待确认的学分/志愿时长记录，由活动发布者确认后计入个人数据。</p>
           </div>
           <el-button @click="loadEnrollments">刷新列表</el-button>
         </section>
@@ -41,7 +41,7 @@
               <div class="manage-card__meta">
                 <span>活动ID #{{ item.activityId }}</span>
                 <span>{{ item.activityLocation || '校内待定' }}</span>
-                <span>{{ item.startTime || '待定时间' }}</span>
+                <span>{{ formatDateTime(item.startTime) }}</span>
               </div>
 
               <div class="manage-card__switch">
@@ -56,7 +56,14 @@
                   :disabled="!item.canSignIn"
                   @click="handleSignIn(item)"
                 >
-                  签到并完成
+                  签到
+                </el-button>
+                <el-button
+                  type="warning"
+                  :disabled="!item.canSignOut"
+                  @click="handleSignOut(item)"
+                >
+                  签退
                 </el-button>
                 <el-button
                   plain
@@ -113,7 +120,7 @@ import { ElMessage } from 'element-plus'
 import CoverImage from '@/components/CoverImage.vue'
 import { enrollApi } from '@/api/platform'
 import { useSession } from '@/composables/useSession'
-import { formatActivityStatus } from '@/utils/format'
+import { formatActivityStatus, formatDateTime } from '@/utils/format'
 
 const router = useRouter()
 const { user } = useSession()
@@ -131,7 +138,7 @@ const feedbackForm = reactive({
 const enrollmentStatusText = (status) => {
   const map = {
     1: '已报名',
-    3: '已签到（旧数据）',
+    3: '已签到',
     4: '已完成',
   }
   return map[status] || `状态 ${status}`
@@ -150,7 +157,13 @@ const loadEnrollments = async () => {
 const handleSignIn = async (item) => {
   // 不再传 userId：后端从 JWT 取当前登录用户，并按归属校验这条报名记录是不是你的
   await enrollApi.signIn(item.enrollId)
-  ElMessage.success('签到成功，活动已完成')
+  ElMessage.success('签到成功，活动结束后请记得签退')
+  await loadEnrollments()
+}
+
+const handleSignOut = async (item) => {
+  await enrollApi.signOut(item.enrollId)
+  ElMessage.success('签退成功，发布者确认后学分/时长到账')
   await loadEnrollments()
 }
 

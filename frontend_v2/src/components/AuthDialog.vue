@@ -39,12 +39,8 @@
             </el-form-item>
           </div>
           <div class="grid-two">
-            <el-form-item label="角色">
-              <el-select v-model="registerForm.userRole" placeholder="请选择角色">
-                <el-option :value="1" label="学生" />
-                <el-option :value="2" label="管理员" />
-                <el-option :value="3" label="老师" />
-              </el-select>
+            <el-form-item label="账号类型">
+              <el-input model-value="学生（注册后默认）" disabled />
             </el-form-item>
             <el-form-item label="密码">
               <el-input v-model="registerForm.password" show-password placeholder="至少 6 位" />
@@ -103,7 +99,6 @@ const loginForm = reactive({
 const registerForm = reactive({
   studentNo: '',
   userName: '',
-  userRole: 1,
   password: '',
   userPhone: '',
   userEmail: '',

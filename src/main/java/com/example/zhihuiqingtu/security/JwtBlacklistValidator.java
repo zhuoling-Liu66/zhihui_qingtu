@@ -1,6 +1,6 @@
 package com.example.zhihuiqingtu.security;
 
-import com.example.zhihuiqingtu.service.impl.TokenBlacklistService;
+import com.example.zhihuiqingtu.security.support.TokenBlacklistService;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;

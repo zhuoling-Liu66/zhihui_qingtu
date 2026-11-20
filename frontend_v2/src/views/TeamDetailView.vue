@@ -70,7 +70,7 @@
                 <span>{{ member.userId === team.leaderUserId ? '队长' : '成员' }}</span>
               </div>
               <div class="team-card__meta">
-                <span>{{ member.joinTime || '待加入时间' }}</span>
+                <span>{{ formatDateTime(member.joinTime, '待加入时间') }}</span>
               </div>
               <div v-if="isLeader && member.userId !== team.leaderUserId" class="manage-card__actions">
                 <el-button plain @click="exitTeam(member)">移出队伍</el-button>
@@ -136,6 +136,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { teamApi } from '@/api/platform'
 import { useSession } from '@/composables/useSession'
+import { formatDateTime } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()

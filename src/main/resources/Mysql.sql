@@ -10,8 +10,9 @@ CREATE TABLE IF NOT EXISTS user_info (
     user_name VARCHAR(50) NOT NULL COMMENT '姓名',
     user_phone VARCHAR(20) NULL COMMENT '手机号',
     user_email VARCHAR(100) NULL COMMENT '邮箱',
-    user_role TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1-学生 2-管理员 3-老师',
+    user_role TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1-学生 2-管理员 3-老师 4-运营人员（管理端普通账号）',
     publisher_status TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0-未开通发布权限 1-已开通发布权限',
+    account_status TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '账号状态：0-正常 1-禁用',
     major VARCHAR(100) NULL COMMENT '专业',
     grade VARCHAR(20) NULL COMMENT '年级',
     password_hash VARCHAR(255) NOT NULL COMMENT '密码摘要',
@@ -22,6 +23,30 @@ CREATE TABLE IF NOT EXISTS user_info (
     UNIQUE KEY uk_user_phone (user_phone, delete_flag),
     UNIQUE KEY uk_user_email (user_email, delete_flag)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户信息表';
+
+CREATE TABLE IF NOT EXISTS publisher_permission_record (
+    record_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '记录主键',
+    student_no VARCHAR(20) NOT NULL COMMENT '目标用户学号或工号',
+    record_type TINYINT UNSIGNED NOT NULL COMMENT '1-学生申请 2-管理员开通 3-管理员收回',
+    record_status TINYINT UNSIGNED NOT NULL COMMENT '0-待审批 1-已通过 2-已驳回 3-已关闭',
+    apply_reason VARCHAR(500) NULL COMMENT '申请理由；管理员直接调整时作为操作说明',
+    operator_user_id VARCHAR(20) NULL COMMENT '审批人或操作管理员学号',
+    operate_time DATETIME NULL COMMENT '审批/操作时间',
+    reject_reason VARCHAR(255) NULL COMMENT '驳回或关闭原因',
+    pending_key VARCHAR(20) GENERATED ALWAYS AS (
+        CASE WHEN record_type = 1 AND record_status = 0 THEN student_no ELSE NULL END
+    ) STORED COMMENT '待审批申请唯一键，非待审批记录为 NULL',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    delete_flag TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '软删除标记，0-正常 1-删除',
+    PRIMARY KEY (record_id),
+    UNIQUE KEY uk_publisher_pending (pending_key),
+    KEY idx_publisher_student (student_no, create_time),
+    KEY idx_publisher_status (record_status),
+    KEY idx_publisher_type_status (record_type, record_status),
+    CONSTRAINT fk_publisher_record_user FOREIGN KEY (student_no) REFERENCES user_info (student_no),
+    CONSTRAINT fk_publisher_record_operator FOREIGN KEY (operator_user_id) REFERENCES user_info (student_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='发布权限申请与变更记录表';
 
 CREATE TABLE IF NOT EXISTS activity_tag (
     tag_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '标签主键',
@@ -42,7 +67,9 @@ CREATE TABLE IF NOT EXISTS activity_main (
     activity_type TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1-第二课堂 2-志愿服务 3-运动健身 4-兴趣团建',
     activity_credit DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '活动学分，仅第二课堂学分活动使用',
     credit_type TINYINT UNSIGNED NULL COMMENT '学分类型，1-创新创业 2-智育 3-德育 4-体育 5-美育 6-劳育，仅第二课堂学分活动使用',
+    credit_mode TINYINT UNSIGNED NULL DEFAULT 1 COMMENT '学分模式：1-固定学分 2-组合学分（按档位与名额分配），仅第二课堂活动使用',
     volunteer_hours DECIMAL(6,2) NULL COMMENT '志愿服务时长，仅志愿服务活动使用',
+    volunteer_mode TINYINT UNSIGNED NULL DEFAULT 1 COMMENT '志愿时长模式：1-固定时长 2-灵活时长（活动结束后逐人录入），仅志愿活动使用',
     cover_url VARCHAR(500) NULL COMMENT '活动封面地址',
     start_time DATETIME NOT NULL COMMENT '开始时间',
     end_time DATETIME NOT NULL COMMENT '结束时间',
@@ -51,15 +78,34 @@ CREATE TABLE IF NOT EXISTS activity_main (
     current_participant INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '当前报名人数',
     activity_status TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1-已发布 4-已取消',
     sign_in_enabled TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '是否开放签到，0-关闭 1-开启',
+    review_status TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '审核状态：0-待审核 1-已通过 2-已驳回（默认1仅兼容历史数据）',
+    review_reason VARCHAR(255) NULL COMMENT '审核驳回原因或备注',
+    reviewer_user_id VARCHAR(20) NULL COMMENT '审核人学号或工号',
+    review_time DATETIME NULL COMMENT '审核时间',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     delete_flag TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '软删除标记，0-正常 1-删除',
     PRIMARY KEY (activity_id),
     KEY idx_activity_publisher (publisher_user_id),
     KEY idx_activity_type_status (activity_type, activity_status),
+    KEY idx_activity_review (review_status, create_time),
     KEY idx_activity_time (start_time, end_time),
     CONSTRAINT fk_activity_publisher FOREIGN KEY (publisher_user_id) REFERENCES user_info (student_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='活动主表';
+
+CREATE TABLE IF NOT EXISTS activity_credit_tier (
+    tier_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '档位主键',
+    activity_id BIGINT UNSIGNED NOT NULL COMMENT '活动ID',
+    credit DECIMAL(5,2) NOT NULL COMMENT '该档学分',
+    quota INT UNSIGNED NOT NULL COMMENT '该档名额',
+    sort_no INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '排序号',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    delete_flag TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '软删除标记，0-正常 1-删除',
+    PRIMARY KEY (tier_id),
+    KEY idx_credit_tier_activity (activity_id, sort_no),
+    CONSTRAINT fk_credit_tier_activity FOREIGN KEY (activity_id) REFERENCES activity_main (activity_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='组合学分档位表（不同学分对应不同名额）';
 
 CREATE TABLE IF NOT EXISTS activity_tag_rel (
     rel_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '关联主键',
@@ -93,6 +139,7 @@ CREATE TABLE IF NOT EXISTS activity_enroll (
     activity_id BIGINT UNSIGNED NOT NULL COMMENT '活动ID',
     enroll_status TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1-已报名 3-已签到 4-已完成',
     sign_in_time DATETIME NULL COMMENT '签到时间',
+    sign_out_time DATETIME NULL COMMENT '签退时间',
     feedback_score TINYINT UNSIGNED NULL COMMENT '活动评分',
     feedback_content VARCHAR(500) NULL COMMENT '活动评价',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -144,7 +191,8 @@ CREATE TABLE IF NOT EXISTS credit_record (
     user_id VARCHAR(20) NOT NULL COMMENT '用户学号或工号',
     activity_id BIGINT UNSIGNED NOT NULL COMMENT '活动ID',
     credit DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '获得学分',
-    credit_type TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1-创新创业 2-智育 3-德育 4-体育 5-美育 6-劳育',
+    credit_type TINYINT UNSIGNED NULL DEFAULT NULL COMMENT '1-创新创业 2-智育 3-德育 4-体育 5-美育 6-劳育；志愿时长记录为空',
+    volunteer_hours DECIMAL(6,2) NULL COMMENT '发放的志愿时长，仅志愿服务活动使用',
     verify_user_id VARCHAR(20) NULL COMMENT '审核人学号或工号',
     verify_status TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0-待审核 1-已通过 2-已驳回',
     reject_reason VARCHAR(255) NULL COMMENT '驳回原因',
@@ -153,6 +201,7 @@ CREATE TABLE IF NOT EXISTS credit_record (
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     delete_flag TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '软删除标记，0-正常 1-删除',
     PRIMARY KEY (record_id),
+    UNIQUE KEY uk_credit_user_activity (user_id, activity_id, delete_flag),
     KEY idx_credit_user (user_id),
     KEY idx_credit_verify (verify_status),
     CONSTRAINT fk_credit_user FOREIGN KEY (user_id) REFERENCES user_info (student_no),

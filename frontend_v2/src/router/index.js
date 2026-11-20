@@ -37,9 +37,9 @@ const routes = [
     component: () => import('@/views/MyTeamsView.vue'),
   },
   {
-    path: '/credit-review',
-    name: 'credit-review',
-    component: () => import('@/views/CreditReviewView.vue'),
+    path: '/my-published/:id/participants',
+    name: 'activity-participants',
+    component: () => import('@/views/ActivityParticipantsView.vue'),
   },
   {
     path: '/profile',
@@ -56,12 +56,19 @@ const routes = [
     name: 'team-detail',
     component: () => import('@/views/TeamDetailView.vue'),
   },
+  {
+    // 后台已拆分到独立的 frontend_admin，旧地址统一回首页
+    path: '/:pathMatch(.*)*',
+    redirect: '/',
+  },
 ]
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes,
   scrollBehavior() {
     return { top: 0 }
   },
 })
+
+export default router

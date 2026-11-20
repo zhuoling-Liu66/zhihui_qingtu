@@ -9,15 +9,15 @@ import com.example.zhihuiqingtu.ai.support.AiConstants;
 import com.example.zhihuiqingtu.ai.vo.ActionConfirmVO;
 import com.example.zhihuiqingtu.ai.vo.PendingActionVO;
 import com.example.zhihuiqingtu.common.ErrorCode;
-import com.example.zhihuiqingtu.dto.enrollment.CreateEnrollmentRequest;
-import com.example.zhihuiqingtu.entity.ActivityEnroll;
-import com.example.zhihuiqingtu.entity.ActivityMain;
-import com.example.zhihuiqingtu.enums.ActivityStatusEnum;
+import com.example.zhihuiqingtu.enrollment.dto.CreateEnrollmentRequest;
+import com.example.zhihuiqingtu.enrollment.entity.ActivityEnroll;
+import com.example.zhihuiqingtu.activity.entity.ActivityMain;
+import com.example.zhihuiqingtu.activity.enums.ActivityStatusEnum;
 import com.example.zhihuiqingtu.exception.BusinessException;
-import com.example.zhihuiqingtu.repository.ActivityEnrollRepository;
-import com.example.zhihuiqingtu.repository.ActivityMainRepository;
-import com.example.zhihuiqingtu.service.EnrollmentService;
-import com.example.zhihuiqingtu.vo.enrollment.EnrollmentResponse;
+import com.example.zhihuiqingtu.enrollment.repository.ActivityEnrollRepository;
+import com.example.zhihuiqingtu.activity.repository.ActivityMainRepository;
+import com.example.zhihuiqingtu.enrollment.service.EnrollmentService;
+import com.example.zhihuiqingtu.enrollment.vo.EnrollmentResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import com.example.zhihuiqingtu.ai.support.AiTextUtils;
 
 /**
  * 待确认动作：写操作的"两阶段确认"。

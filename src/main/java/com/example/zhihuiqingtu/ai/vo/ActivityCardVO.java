@@ -1,6 +1,6 @@
 package com.example.zhihuiqingtu.ai.vo;
 
-import com.example.zhihuiqingtu.vo.activity.ActivityTagVO;
+import com.example.zhihuiqingtu.activity.vo.ActivityTagVO;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

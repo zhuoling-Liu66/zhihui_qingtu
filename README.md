@@ -21,23 +21,46 @@
 ## 主要功能
 
 - 用户注册、登录和资料维护
-- 校园活动发布、查询、详情和状态管理
-- 活动报名、退出、签到和反馈
-- 第二课堂学分记录与审核
+- 活动发布：学生/老师发布无学分活动；运营人员发布学分/志愿活动（需审核）；管理员发布全类型活动（免审核）
+- 活动审核、查询、详情、状态与签到开关管理
+- 活动报名、退出、自助签到/签退、评价
+- 考勤与发放：发布者/管理员修正考勤；组合学分按档位名额发放；灵活志愿时长逐人录入并提交管理员审核
+- 独立管理后台：活动审核、发布活动、参与人员与发放管理、账号管理、AI 智能导入
 - 活动标签和用户兴趣标签管理
 - 队伍创建、加入、审核和解散
+- AI 助手：学生端对话式找活动/推荐；管理端 AI 批量导入发放（Excel/CSV 自动识别列）
 
 ## 目录结构
 
 ```text
 .
-├── docs/                         # 项目文档
-├── frontend/                     # Vue 3 + Vite 前端项目
-├── src/main/java/                # Spring Boot 后端源码
+├── docs/                         # 项目文档（含 SQL 迁移、架构规范）
+├── frontend_v2/                  # 客户端：学生 / 老师使用（Vite 5173）
+├── frontend_admin/               # 管理端：管理员 / 运营人员使用（Vite 5174）
+├── src/main/java/                # Spring Boot 后端源码（按业务域分包，见下）
 ├── src/main/resources/           # 后端配置、静态资源和数据库脚本
 ├── pom.xml                       # Maven 后端依赖配置
 └── README.md                     # 项目说明
 ```
+
+### 后端代码结构（按业务域）
+
+```text
+src/main/java/com/example/zhihuiqingtu
+├── common/ config/ security/ exception/ validation   # 公共基础设施
+├── auth/        # 登录注册、JWT
+├── user/        # 用户资料、兴趣标签、学分总览
+├── activity/    # 活动发布/审核/查询 + 缓存/库存/热门榜 + 档位
+├── enrollment/  # 报名、取消、签到/签退、评价
+├── award/       # 参与人员、考勤修正、发放与批量审核、统计、发放记录工厂
+├── team/ publisher/
+├── admin/       # 管理端交付通道：auth/activity/award/dashboard/enrollment/publisher/team/user
+└── ai/          # AI 对话/推荐/工具/待确认动作/表格列识别
+```
+
+- `ActivityService` 是稳定门面：查询已拆到 `ActivityQueryService`，VO 装配在 `ActivityAssembler`；
+- `EnrollmentService` 是稳定门面：参与人员与发放拆到 `ParticipantAwardService`，发放记录生成在 `AwardRecordFactory`；
+- 详细分层、依赖规则、命名规范与新增模块步骤见 **[后端架构与开发规范](docs/后端架构与开发规范.md)**。
 
 ## 本地运行
 
@@ -59,6 +82,17 @@ mysql -u root -p < src/main/resources/Mysql.sql
 
 数据库默认名称为 `campus_activity_platform`。如需修改连接信息，请使用环境变量配置，不要把本机密码提交到仓库。
 
+**已有数据库升级**：按需依次执行 `docs/sql/` 下的迁移（新库只执行 `Mysql.sql`）：
+
+```bash
+mysql -u root -p campus_activity_platform < docs/sql/activity_review_and_staff.sql
+mysql -u root -p campus_activity_platform < docs/sql/publisher_permission.sql
+mysql -u root -p campus_activity_platform < docs/sql/account_status.sql
+mysql -u root -p campus_activity_platform < docs/sql/ai_assistant.sql
+mysql -u root -p campus_activity_platform < docs/sql/attendance_and_award.sql
+mysql -u root -p campus_activity_platform < docs/sql/credit_modes_and_tiers.sql
+```
+
 ### 3. 启动后端
 
 Windows PowerShell 示例：
@@ -75,18 +109,32 @@ $env:REDIS_PORT="6379"
 后端默认地址：
 
 ```text
-http://localhost:8082
+http://localhost:8080
 ```
 
-### 4. 启动前端
+### 4. 启动客户端
 
 ```bash
-cd frontend
+cd frontend_v2
 npm install
 npm run dev
 ```
 
-前端默认由 Vite 输出本地访问地址。
+客户端默认地址：`http://localhost:5173`。学生和老师权限一致，都可以发布**无学分**活动；活动提交后需管理员审核。
+
+### 5. 启动管理端（独立应用）
+
+```bash
+cd frontend_admin
+npm install
+npm run dev
+```
+
+管理端默认地址：`http://localhost:5174`，与客户端分开部署、分别登录：
+
+- **管理员**：活动审核、发布活动（全类型，免审核）、参与人员与发放管理、账号管理、AI 智能导入；
+- **运营人员**（管理端普通账号）：发布/编辑学分或志愿活动（提交管理员审核），管理自己活动的参与人员与发放。
+- 运营账号由管理员在「账号管理」中创建；学生/老师不能登录管理端，运营账号也不能登录客户端。
 
 ## AI 助手（可选功能）
 
@@ -96,8 +144,10 @@ npm run dev
 
 - 后端：Spring AI 2.0 + DeepSeek（OpenAI 兼容），工具调用 + SSE 流式
 - 前端：`frontend_v2` 右下角悬浮球 → 聊天抽屉，活动/队伍卡片可跳转，报名有确认卡片
+- **管理端 AI 智能导入**：活动「参与人员」中上传 Excel/CSV，AI 自动识别表头、学号/姓名列、时长或学分列，
+  学号优先匹配参与者，预览后一键保存为待审核；模型不可用时自动降级为表头规则识别
 - **不配 API Key 也能启动**：启动时打一条 WARN，聊天返回规则降级结果（`degraded=true`），
-  推荐位完全可用
+  推荐位与导入向导的规则识别完全可用
 
 ### 配置
 

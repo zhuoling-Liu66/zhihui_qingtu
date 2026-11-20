@@ -11,7 +11,7 @@
           <div>
             <p class="section-head__kicker">我的活动</p>
             <h1>我发布的活动</h1>
-            <p>你可以在这里统一管理自己发布的活动，删除活动时会连同报名、学分、组队和推荐日志一起清除。</p>
+            <p>你可以在这里统一管理自己发布的活动；在「参与人员」中修正考勤、按人调整并确认学分/志愿时长发放。删除活动时会连同报名、学分、组队和推荐日志一起清除。</p>
           </div>
           <el-button type="warning" size="large" @click="router.push('/publish')">继续发布活动</el-button>
         </section>
@@ -35,7 +35,12 @@
                   <h3>{{ activity.activityTitle }}</h3>
                   <p>{{ formatMetric(activity) }}</p>
                 </div>
-                <el-tag round type="warning">{{ formatActivityStatusByActivity(activity) }}</el-tag>
+                <div class="manage-card__tags">
+                  <el-tag round :type="reviewTagType(activity.reviewStatus)">
+                    {{ formatActivityReviewStatus(activity.reviewStatus) }}
+                  </el-tag>
+                  <el-tag round type="info">{{ formatActivityStatusByActivity(activity) }}</el-tag>
+                </div>
               </div>
 
               <div class="manage-card__meta">
@@ -44,25 +49,40 @@
                 <span>{{ activity.currentParticipant }}/{{ activity.maxParticipant || '不限' }} 人</span>
               </div>
 
+              <p
+                v-if="Number(activity.reviewStatus) === 2 && activity.reviewReason"
+                class="manage-card__review-reason"
+              >
+                驳回原因：{{ activity.reviewReason }}
+              </p>
+              <p v-else-if="Number(activity.reviewStatus) === 0" class="manage-card__review-reason">
+                活动正在等待管理员审核，审核通过前不会公开展示。
+              </p>
+
               <div class="manage-card__switch">
                 <span>签到开关</span>
                 <el-switch
                   :model-value="Number(activity.signInEnabled) === 1"
+                  :disabled="Number(activity.reviewStatus) !== 1"
                   @change="(value) => toggleSignIn(activity, value)"
                 />
               </div>
 
               <div class="manage-card__actions">
-                <el-button plain @click="router.push({ name: 'publish', query: { edit: activity.activityId } })">
+                <el-button
+                  v-if="[3, 4].includes(Number(activity.activityType))"
+                  plain
+                  @click="router.push({ name: 'publish', query: { edit: activity.activityId } })"
+                >
                   编辑活动
                 </el-button>
                 <el-button
-                  v-if="activity.activityType === 1"
+                  v-if="Number(activity.reviewStatus) === 1"
                   type="warning"
                   plain
-                  @click="router.push({ name: 'credit-review', query: { activityId: activity.activityId } })"
+                  @click="router.push({ name: 'activity-participants', params: { id: activity.activityId } })"
                 >
-                  学分审核
+                  参与人员
                 </el-button>
                 <el-button
                   v-if="activity.activityStatus !== 4"
@@ -72,7 +92,7 @@
                   取消活动
                 </el-button>
                 <el-button
-                  v-else
+                  v-else-if="Number(activity.reviewStatus) === 1"
                   type="warning"
                   plain
                   @click="changeStatus(activity, 1)"
@@ -99,12 +119,18 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import CoverImage from '@/components/CoverImage.vue'
 import { activityApi } from '@/api/platform'
 import { useSession } from '@/composables/useSession'
-import { formatActivityStatusByActivity, formatMetric } from '@/utils/format'
+import { formatActivityReviewStatus, formatActivityStatusByActivity, formatMetric } from '@/utils/format'
 
 const router = useRouter()
 const { user } = useSession()
 
 const activities = ref([])
+
+const reviewTagType = (reviewStatus) => {
+  if (Number(reviewStatus) === 1) return 'success'
+  if (Number(reviewStatus) === 2) return 'danger'
+  return 'warning'
+}
 
 const loadActivities = async () => {
   if (!user.value?.userId) return
@@ -152,3 +178,21 @@ const removeActivity = async (activity) => {
 
 onMounted(loadActivities)
 </script>
+
+<style scoped>
+.manage-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.manage-card__review-reason {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #8a5a00;
+  font-size: 13px;
+  line-height: 1.6;
+}
+</style>

@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { aiApi, streamChat } from '@/api/ai'
 
@@ -58,7 +58,10 @@ export function useAiChat() {
       status: 'done',
     })
 
-    const assistant = {
+    // 必须用 reactive() 包一层：push 进响应式数组后，局部变量若仍指向原始对象，
+    // 下面 SSE 回调里的 assistant.content += ... 会绕过 Vue 的 proxy 写入，
+    // 视图收不到通知 —— 表现就是"流式输出不生效"，要等整段结束才一次性显示。
+    const assistant = reactive({
       key: `a-${Date.now()}`,
       role: 'assistant',
       content: '',
@@ -71,7 +74,7 @@ export function useAiChat() {
       toolText: '',
       status: 'streaming',
       error: '',
-    }
+    })
     messages.value.push(assistant)
     scrollTick.value += 1
     streaming.value = true

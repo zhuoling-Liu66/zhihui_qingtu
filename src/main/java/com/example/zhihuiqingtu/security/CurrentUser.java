@@ -1,6 +1,6 @@
 package com.example.zhihuiqingtu.security;
 
-import com.example.zhihuiqingtu.enums.UserRoleEnum;
+import com.example.zhihuiqingtu.user.enums.UserRoleEnum;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
+import com.example.zhihuiqingtu.config.SecurityConfig;
 
 /**
  * 当前登录用户的统一读取入口。
@@ -61,7 +62,7 @@ public class CurrentUser {
     }
 
     /**
-     * 取当前登录用户的角色编码（JWT 自定义 claim {@code role}：1 学生 / 2 管理员 / 3 老师）。
+     * 取当前登录用户的角色编码（JWT 自定义 claim {@code role}：1 学生 / 2 管理员 / 3 老师 / 4 运营人员）。
      *
      * @return 角色编码；取不到时返回 {@link Optional#empty()}
      */
@@ -84,26 +85,11 @@ public class CurrentUser {
      * 声明式授权集中在方法注解上便于审计，散落在方法体内的判断容易遗漏。
      * 本方法用于需要结合数据库实体归属的复合规则。
      *
-     * @param roleCode 角色编码（1 学生 / 2 管理员 / 3 老师）
+     * @param roleCode 角色编码（1 学生 / 2 管理员 / 3 老师 / 4 运营人员）
      * @return true 表示当前用户是该角色
      */
     public boolean hasRole(int roleCode) {
         return roleCode().filter(code -> code == roleCode).isPresent();
-    }
-
-    /**
-     * 判断当前用户是否为管理员或老师。
-     *
-     * <p>该判断在多个模块用于确定数据可见范围，集中于此可避免各 Service 重复实现
-     * 而出现遗漏或编码写错，导致可见范围被悄然放宽。
-     *
-     * <p>注意其语义是"能看多大范围"，不代表"能否执行某操作"——
-     * 后者通常还需校验实体归属（如是否为该活动的发布者）。
-     *
-     * @return true 表示当前登录用户是管理员或老师
-     */
-    public boolean isAdminOrTeacher() {
-        return hasRole(UserRoleEnum.ADMIN.getCode()) || hasRole(UserRoleEnum.TEACHER.getCode());
     }
 
     /**

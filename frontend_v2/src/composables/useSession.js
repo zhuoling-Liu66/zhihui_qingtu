@@ -65,6 +65,21 @@ function setUser(user) {
   persistToken(user?.token)
 }
 
+/**
+ * 局部更新当前用户信息（例如管理员审批通过后刷新 publisherStatus）。
+ *
+ * 与 {@link setUser} 的区别：不会重新读写 token。登录响应里的 token 目前也存放在
+ * user 对象中，如果这里直接用 setUser({...user, publisherStatus})，一旦某个登录响应
+ * 没有带 token，persistToken(undefined) 会把本地凭证误清空。
+ *
+ * @param {Object} patch 需要覆盖的用户字段
+ */
+function patchUser(patch) {
+  if (!sessionState.user) return
+  sessionState.user = { ...sessionState.user, ...patch }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionState.user))
+}
+
 function clearUser() {
   sessionState.user = null
   localStorage.removeItem(STORAGE_KEY)
@@ -106,6 +121,7 @@ export function useSession() {
     user: computed(() => sessionState.user),
     isLoggedIn: computed(() => Boolean(sessionState.user)),
     setUser,
+    patchUser,
     clearUser,
     getToken,
   }

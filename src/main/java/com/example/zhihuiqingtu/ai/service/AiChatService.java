@@ -36,6 +36,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
+import com.example.zhihuiqingtu.exception.GlobalExceptionHandler;
 
 /**
  * 对话编排：会话、历史、提示词、工具、降级、落库。

@@ -16,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.example.zhihuiqingtu.ai.engine.RecommendationEngine.ActivityCandidate;
+import com.example.zhihuiqingtu.ai.engine.RecommendationEngine.ActivityFilter;
 
 /**
  * 推荐位服务：把引擎的候选转成卡片、写曝光日志、处理点击/报名归因。

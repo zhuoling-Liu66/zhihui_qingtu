@@ -1,16 +1,16 @@
 package com.example.zhihuiqingtu.ai.support;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.zhihuiqingtu.entity.ActivityEnroll;
-import com.example.zhihuiqingtu.entity.ActivityMain;
-import com.example.zhihuiqingtu.entity.ActivityTag;
-import com.example.zhihuiqingtu.entity.UserInfo;
-import com.example.zhihuiqingtu.entity.UserInterestRel;
-import com.example.zhihuiqingtu.repository.ActivityEnrollRepository;
-import com.example.zhihuiqingtu.repository.ActivityMainRepository;
-import com.example.zhihuiqingtu.repository.ActivityTagRepository;
-import com.example.zhihuiqingtu.repository.UserInfoRepository;
-import com.example.zhihuiqingtu.repository.UserInterestRelRepository;
+import com.example.zhihuiqingtu.enrollment.entity.ActivityEnroll;
+import com.example.zhihuiqingtu.activity.entity.ActivityMain;
+import com.example.zhihuiqingtu.activity.entity.ActivityTag;
+import com.example.zhihuiqingtu.user.entity.UserInfo;
+import com.example.zhihuiqingtu.user.entity.UserInterestRel;
+import com.example.zhihuiqingtu.enrollment.repository.ActivityEnrollRepository;
+import com.example.zhihuiqingtu.activity.repository.ActivityMainRepository;
+import com.example.zhihuiqingtu.activity.repository.ActivityTagRepository;
+import com.example.zhihuiqingtu.user.repository.UserInfoRepository;
+import com.example.zhihuiqingtu.user.repository.UserInterestRelRepository;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;

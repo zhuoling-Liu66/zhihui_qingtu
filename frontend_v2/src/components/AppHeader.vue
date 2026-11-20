@@ -4,7 +4,7 @@
       <span class="sidebar-brand__logo">闲</span>
       <div>
         <strong>智慧青图</strong>
-        <small>Campus Goofish</small>
+        <small>校园活动集市</small>
       </div>
     </router-link>
 
@@ -41,7 +41,6 @@
             {{ loggingOut ? '退出中…' : '退出登录' }}
           </button>
         </div>
-        <p class="sidebar-userbox__hint">学分审核入口：我发布的活动 -> 学分活动卡片</p>
       </template>
       <template v-else>
         <p class="sidebar-userbox__eyebrow">账号入口</p>
@@ -58,37 +57,54 @@
         <el-input
           v-model="searchText"
           class="search-hub__input"
-          placeholder="搜活动、搜标签、搜组队"
+          placeholder="搜活动、标签或队伍"
           @keyup.enter="submitSearch"
         >
           <template #suffix>
-            <el-button type="warning" round @click="submitSearch">搜索</el-button>
+            <button type="button" class="search-submit" @click="submitSearch">搜索</button>
           </template>
         </el-input>
       </div>
 
-      <div class="workspace-topbar__summary">
-        <span class="workspace-topbar__eyebrow">Campus Activity Hub</span>
-        <strong>把第二课堂、志愿服务和组队邀请放进同一条校园信息流。</strong>
-      </div>
+      <!--
+        顶栏头像：已登录显示用户名首字，点击进入个人中心；
+        未登录显示占位头像，点击拉起登录弹窗，让"登录"在顶栏也始终有一个稳定入口。
+      -->
+      <button
+        v-if="isLoggedIn"
+        type="button"
+        class="topbar-avatar"
+        :title="(user?.userName || user?.userId || '') + ' · 个人中心'"
+        @click="router.push({ name: 'profile' })"
+      >
+        {{ avatarChar }}
+      </button>
+      <button
+        v-else
+        type="button"
+        class="topbar-avatar topbar-avatar--ghost"
+        title="登录"
+        @click="$emit('open-auth')"
+      >
+        <el-icon><UserFilled /></el-icon>
+      </button>
     </div>
 
     <div class="workspace-topbar__topics">
-      <button
+      <router-link
         v-for="item in topQuickLinks"
         :key="item.slug"
         class="workspace-topbar__topic"
-        type="button"
-        @click="router.push({ name: 'section', params: { slug: item.slug } })"
+        :to="{ name: 'section', params: { slug: item.slug } }"
       >
         {{ item.label }}
-      </button>
+      </router-link>
     </div>
   </header>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -108,6 +124,12 @@ defineEmits(['open-auth'])
 const route = useRoute()
 const router = useRouter()
 const { user, isLoggedIn, clearUser } = useSession()
+
+/* 头像字符：优先用户名首字，退回用户ID首字；用展开运算符避免代理对截断 */
+const avatarChar = computed(() => {
+  const name = (user.value?.userName || user.value?.userId || '').trim()
+  return [...name][0] || '青'
+})
 
 const loggingOut = ref(false)
 
@@ -142,14 +164,14 @@ const handleLogout = async () => {
   }
 }
 
-const workspaceLinks = [
+const workspaceLinks = computed(() => [
   { label: '首页逛场', to: { name: 'home' }, icon: HomeFilled, names: ['home'] },
   { label: '发布活动', to: { name: 'publish' }, icon: Position, names: ['publish'] },
-  { label: '我发布的活动', to: { name: 'my-published' }, icon: Files, names: ['my-published', 'credit-review'] },
+  { label: '我发布的活动', to: { name: 'my-published' }, icon: Files, names: ['my-published', 'activity-participants'] },
   { label: '我参加的活动', to: { name: 'my-joined' }, icon: Calendar, names: ['my-joined'] },
   { label: '我的队伍', to: { name: 'my-teams' }, icon: DataAnalysis, names: ['my-teams', 'team-detail'] },
   { label: '个人中心', to: { name: 'profile' }, icon: UserFilled, names: ['profile'] },
-]
+])
 
 const searchText = ref(route.query.q || route.query.keyword || '')
 

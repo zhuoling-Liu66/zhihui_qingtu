@@ -11,7 +11,6 @@
         @focus="activeKey = item.key"
         @click="handleLink({ type: 'section', slug: item.slug })"
       >
-        <span>◎</span>
         <strong>{{ item.label }}</strong>
       </button>
     </aside>

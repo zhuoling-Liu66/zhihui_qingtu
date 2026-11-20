@@ -2,15 +2,17 @@ package com.example.zhihuiqingtu.config;
 
 import com.example.zhihuiqingtu.common.ApiResponse;
 import com.example.zhihuiqingtu.common.ErrorCode;
-import com.example.zhihuiqingtu.common.JwtProperties;
+import com.example.zhihuiqingtu.security.jwt.JwtProperties;
 import com.example.zhihuiqingtu.security.CompositeBearerTokenResolver;
 import com.example.zhihuiqingtu.security.JwtBlacklistValidator;
 import com.example.zhihuiqingtu.security.RoleClaimAuthoritiesConverter;
+import com.example.zhihuiqingtu.security.UserRevocationValidator;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
@@ -40,6 +42,10 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import com.example.zhihuiqingtu.admin.support.AdminGuard;
+import com.example.zhihuiqingtu.exception.GlobalExceptionHandler;
+import com.example.zhihuiqingtu.security.CurrentUser;
+import com.example.zhihuiqingtu.security.jwt.JwtUtil;
 
 /**
  * 安全配置：JWT 认证与授权。
@@ -98,15 +104,17 @@ public class SecurityConfig {
      * 默认按 HS256 校验，与 HS384/HS512 签发的令牌不匹配。
      *
      * <p>解码器只负责"验签 + 有效期"；登出黑名单通过 {@link JwtBlacklistValidator} 追加，
-     * 见下方说明。
+     * 按用户撤销（禁用/注销账号）通过 {@link UserRevocationValidator} 追加，见下方说明。
      *
      * @param jwtProperties        JWT 配置（密钥、算法）
      * @param jwtBlacklistValidator 登出黑名单校验器
+     * @param userRevocationValidator 按用户撤销校验器（账号禁用/注销立即生效）
      * @return 配置好的解码器
      */
     @Bean
     public JwtDecoder jwtDecoder(JwtProperties jwtProperties,
-                                JwtBlacklistValidator jwtBlacklistValidator) {
+                                JwtBlacklistValidator jwtBlacklistValidator,
+                                UserRevocationValidator userRevocationValidator) {
         MacAlgorithm macAlgorithm = switch (jwtProperties.resolvedAlgorithm()) {
             case HS256 -> MacAlgorithm.HS256;
             case HS384 -> MacAlgorithm.HS384;
@@ -118,16 +126,17 @@ public class SecurityConfig {
                 .build();
 
         /*
-         * 追加黑名单校验。
+         * 追加黑名单与按用户撤销校验。
          *
          * setJwtValidator 是【替换】语义而非追加：不显式带上 JwtValidators.createDefault()，
          * 框架默认的 exp/nbf 校验就会被顶掉，导致【已过期的令牌永久有效】——
          * 这是静默的安全漏洞，不会报错、不会失败，只有安全测试才能发现。
+         * 同理，新增校验器时必须保留已有的全部校验器，漏掉任何一个都是静默失效。
          */
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefault(), jwtBlacklistValidator));
+                JwtValidators.createDefault(), jwtBlacklistValidator, userRevocationValidator));
 
-        log.info("JWT 解码器已就绪：算法={}，已启用默认校验(exp/nbf) + 黑名单校验",
+        log.info("JWT 解码器已就绪：算法={}，已启用默认校验(exp/nbf) + 黑名单校验 + 按用户撤销校验",
                 macAlgorithm.name());
         return decoder;
     }
@@ -175,12 +184,62 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 登录/注册：用于换取令牌，本身不能要求令牌
                         .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
+                        // 管理端独立登录：管理员与运营人员入口
+                        .requestMatchers("/api/admin/auth/login").permitAll()
                         // 静态封面图：由 <img src> 直接引用，无法携带请求头
                         .requestMatchers("/uploads/**").permitAll()
                         // 接口文档
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // 健康检查：供运维探针访问
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        // 管理后台：管理员与运营人员。URL 级只做粗粒度拦截，
+                        // 具体接口由 AdminGuard 回查数据库角色区分权限：
+                        // 管理类接口 requireAdmin，学分活动发布 requireStaff。
+                        .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "STAFF")
+
+                        /*
+                         * 运营人员是管理端专属账号：可以读取活动基础信息、上传封面，
+                         * 但不能调用客户端的学生/老师业务接口（报名、组队、个人资料等）。
+                         * 客户端登录已经拒绝 STAFF，这里再从 URL 层兜底，避免拿着管理端
+                         * 令牌直接调用客户端接口。
+                         */
+                        .requestMatchers("/api/auth/logout").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/activities/covers").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/activities").hasAnyRole("STUDENT", "TEACHER")
+                        /*
+                         * 签到开关：活动发布者要在活动当天开启/关闭签到。
+                         * 运营人员从管理端发布学分活动，也需要操作自己活动的开关，
+                         * 因此仅对这一条写接口额外放行 STAFF；服务层仍会校验
+                         * “必须是该活动发布者或管理员”，其他活动写接口对 STAFF 继续关闭。
+                         */
+                        .requestMatchers(HttpMethod.PATCH, "/api/activities/*/sign-in-switch")
+                        .hasAnyRole("STUDENT", "TEACHER", "ADMIN", "STAFF")
+                        /*
+                         * 浏览免登录：列表/详情/标签/热门榜/剩余名额都是 GET 只读接口，对匿名开放。
+                         * 服务层用 CurrentUser.userId()（orElse(null)）区分可见性：匿名只能看到
+                         * 审核通过的活动，"我发布的"待审核视图仍只对登录的本人生效。
+                         * 报名/发布/修改等写操作不受影响，仍走下面的登录 + 角色规则。
+                         */
+                        .requestMatchers(HttpMethod.GET, "/api/activities/**").permitAll()
+                        .requestMatchers("/api/activities/**").hasAnyRole("STUDENT", "TEACHER", "ADMIN")
+                        // 队伍列表/详情同属浏览内容（首页队伍区块、队伍详情页），匿名可看；
+                        // 入队/建队/审批等写操作仍要求登录。注意放行必须声明在角色规则之前。
+                        .requestMatchers(HttpMethod.GET, "/api/teams", "/api/teams/*").permitAll()
+                        /*
+                         * 参与人员管理：活动的发布者也可能是运营人员（管理端发布的学分活动），
+                         * 因此只对这几个“管理自己活动”的接口额外放行 STAFF。
+                         * 具体权限仍由服务层按“活动发布者或管理员”回查数据库判定，
+                         * STAFF 只能操作自己发布的活动，其余客户端接口依旧对其关闭。
+                         */
+                        .requestMatchers(HttpMethod.GET, "/api/enrollments/activity/*")
+                        .hasAnyRole("STUDENT", "TEACHER", "ADMIN", "STAFF")
+                        .requestMatchers(HttpMethod.PATCH,
+                                "/api/enrollments/*/attendance",
+                                "/api/enrollments/*/award",
+                                "/api/enrollments/activity/*/awards/confirm")
+                        .hasAnyRole("STUDENT", "TEACHER", "ADMIN", "STAFF")
+                        .requestMatchers("/api/enrollments/**", "/api/teams/**", "/api/credits/**", "/api/users/**")
+                        .hasAnyRole("STUDENT", "TEACHER", "ADMIN")
                         // 其余一律要求已认证
                         .anyRequest().authenticated())
 
@@ -224,7 +283,7 @@ public class SecurityConfig {
     /**
      * 把 JWT 的 {@code role} claim 映射成 {@code ROLE_*} 权限。
      *
-     * <p>签发端写入的 {@code role} 是<b>数字</b>角色编码（1 学生 / 2 管理员 / 3 老师），
+     * <p>签发端写入的 {@code role} 是<b>数字</b>角色编码（1 学生 / 2 管理员 / 3 老师 / 4 运营人员），
      * 而框架默认的 {@code JwtGrantedAuthoritiesConverter} 只识别字符串与集合类型，
      * 遇到数字会<b>静默返回空权限</b>（详见 {@link RoleClaimAuthoritiesConverter}）。
      * 因此这里使用自定义转换器。

@@ -172,6 +172,16 @@ async function loadQuota() {
   }
 }
 
+// 一轮生成结束（streaming 由 true→false）就重拉配额。
+// 后端在发 usage/done 事件之前已 recordTokens 落库，所以此刻取到的就是最新剩余量；
+// 否则"今日剩余 tokens"会一直停在打开抽屉时的旧值，非得刷新页面才更新。
+// 用边沿判断（oldValue && !value）避免初始化/重复触发；停止、报错同样会走到这里，重拉无副作用。
+watch(streaming, (value, oldValue) => {
+  if (oldValue && !value) {
+    loadQuota()
+  }
+})
+
 function handleSend() {
   if (streaming.value) {
     stop()
@@ -241,60 +251,48 @@ watch(visible, (value) => {
 <style scoped>
 .ai-fab {
   position: fixed;
-  right: 28px;
-  bottom: 28px;
+  right: 24px;
+  bottom: 24px;
   z-index: 2200;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 18px 12px 14px;
-  border: none;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #ffd400, #ffb700);
-  color: #3b2f00;
-  font-size: 14px;
-  font-weight: 700;
+  padding: 8px 12px 8px 8px;
+  border: 1px solid var(--line, rgba(31, 27, 22, 0.09));
+  border-radius: 10px;
+  background: var(--paper-strong, #fffdf9);
+  color: var(--ink, #1f1b16);
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 14px 34px rgba(255, 183, 0, 0.42);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 8px 24px rgba(31, 27, 22, 0.08);
+  transition:
+    background-color 150ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 150ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ai-fab:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 18px 40px rgba(255, 183, 0, 0.5);
+  background: var(--paper, #f7f4ee);
+  border-color: var(--line-strong, rgba(31, 27, 22, 0.16));
+  transform: none;
+  box-shadow: 0 8px 24px rgba(31, 27, 22, 0.08);
 }
 
 .ai-fab__mark {
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(59, 47, 0, 0.9);
-  color: #ffd400;
-  font-size: 11px;
-  letter-spacing: 0.5px;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  background: var(--ink, #1f1b16);
+  color: var(--brand-yellow, #f2c200);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .ai-fab__glow {
-  position: absolute;
-  inset: -6px;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(255, 212, 0, 0.45), transparent 70%);
-  animation: ai-pulse 2.6s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes ai-pulse {
-  0%,
-  100% {
-    opacity: 0.45;
-    transform: scale(0.96);
-  }
-  50% {
-    opacity: 0.9;
-    transform: scale(1.04);
-  }
+  display: none;
 }
 
 .ai-panel {

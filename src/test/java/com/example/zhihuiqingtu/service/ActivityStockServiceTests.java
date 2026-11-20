@@ -1,8 +1,8 @@
 package com.example.zhihuiqingtu.service;
 
-import com.example.zhihuiqingtu.entity.ActivityMain;
-import com.example.zhihuiqingtu.repository.ActivityMainRepository;
-import com.example.zhihuiqingtu.service.impl.ActivityStockService;
+import com.example.zhihuiqingtu.activity.entity.ActivityMain;
+import com.example.zhihuiqingtu.activity.repository.ActivityMainRepository;
+import com.example.zhihuiqingtu.activity.support.ActivityStockService;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 

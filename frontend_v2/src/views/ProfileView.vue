@@ -16,10 +16,10 @@
             </div>
             <div class="profile-hero__meta">
               <span>学号/工号 {{ profile?.studentNo || user.userId }}</span>
-              <span>角色 {{ profile?.userRole }}</span>
-              <span>发布权限 {{ profile?.publisherStatus }}</span>
+              <span>角色 {{ formatUserRole(profile?.userRole) }}</span>
             </div>
           </article>
+
 
           <article class="card-surface">
             <div class="section-head section-head--compact">
@@ -71,11 +71,23 @@
             </div>
             <div class="history-list">
               <article v-for="item in histories" :key="item.enrollId" class="history-item">
-                <strong>{{ item.activityTitle }}</strong>
-                <span>{{ item.startTime || '待定时间' }}</span>
-                <p>活动ID {{ item.activityId }} · 类型 {{ item.activityType }} · 状态 {{ item.enrollStatus }}</p>
+                <div class="history-item__top">
+                  <strong>{{ item.activityTitle }}</strong>
+                  <span
+                    class="status-pill"
+                    :class="`status-pill--${enrollTone(item.enrollStatus)}`"
+                  >
+                    {{ formatEnrollStatus(item.enrollStatus) }}
+                  </span>
+                </div>
+                <p class="history-item__meta">
+                  {{ formatActivityType(item.activityType) }} · {{ formatDateTime(item.startTime) }}
+                </p>
               </article>
             </div>
+            <p v-if="!histories.length" class="search-empty">
+              还没有参与记录，去首页逛一场感兴趣的活动吧。
+            </p>
           </article>
         </section>
 
@@ -88,7 +100,14 @@
               </div>
             </div>
             <div class="credit-grid">
-              <div class="credit-tile"><span>总学分</span><strong>{{ overview?.totalCredit || 0 }}</strong></div>
+              <div class="credit-tile credit-tile--total">
+                <span>总学分</span>
+                <strong>{{ overview?.totalCredit || 0 }}</strong>
+              </div>
+              <div class="credit-tile">
+                <span>志愿时长</span>
+                <strong>{{ overview?.totalVolunteerHours || 0 }}</strong>
+              </div>
               <div class="credit-tile"><span>创新创业</span><strong>{{ overview?.innovationEntrepreneurshipCredit || 0 }}</strong></div>
               <div class="credit-tile"><span>智育</span><strong>{{ overview?.intellectualEducationCredit || 0 }}</strong></div>
               <div class="credit-tile"><span>德育</span><strong>{{ overview?.moralEducationCredit || 0 }}</strong></div>
@@ -101,23 +120,35 @@
           <article class="card-surface">
             <div class="section-head section-head--compact">
               <div>
-                <p class="section-head__kicker">学分记录</p>
-                <h3>最近审核结果</h3>
+                <p class="section-head__kicker">发放记录</p>
+                <h3>最近发放结果</h3>
               </div>
             </div>
             <div class="side-list">
-              <article v-for="credit in credits" :key="credit.recordId" class="team-card">
-                <div class="team-card__top">
-                  <strong>记录 #{{ credit.recordId }}</strong>
-                  <span>{{ credit.credit }}</span>
+              <article v-for="credit in credits" :key="credit.recordId" class="history-item">
+                <div class="history-item__top">
+                  <strong v-if="Number(credit.volunteerHours) > 0">
+                    志愿服务 +{{ credit.volunteerHours }} 小时
+                  </strong>
+                  <strong v-else>
+                    {{ formatCreditType(credit.creditType) }} +{{ credit.credit }} 分
+                  </strong>
+                  <span
+                    class="status-pill"
+                    :class="`status-pill--${verifyTone(credit.verifyStatus)}`"
+                  >
+                    {{ formatVerifyStatus(credit.verifyStatus) }}
+                  </span>
                 </div>
-                <p>活动 {{ credit.activityId }} · 类型 {{ credit.creditType }}</p>
-                <div class="team-card__meta">
-                  <span>状态 {{ credit.verifyStatus }}</span>
-                  <span>{{ credit.rejectReason || '审核中或已通过' }}</span>
-                </div>
+                <p class="history-item__meta">活动 #{{ credit.activityId }}</p>
+                <p v-if="credit.rejectReason" class="history-item__reason">
+                  不发放原因：{{ credit.rejectReason }}
+                </p>
               </article>
             </div>
+            <p v-if="!credits.length" class="search-empty">
+              暂无发放记录，参加学分/志愿活动并完成签退后，会生成待发布者确认的记录。
+            </p>
           </article>
         </aside>
       </template>
@@ -130,11 +161,27 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { activityApi, creditApi, userApi } from '@/api/platform'
 import { useSession } from '@/composables/useSession'
+import {
+  formatActivityType,
+  formatCreditType,
+  formatDateTime,
+  formatEnrollStatus,
+  formatUserRole,
+  formatVerifyStatus,
+  statusTone,
+} from '@/utils/format'
 
 const { user } = useSession()
 
+/* 报名状态配色：已完成=绿；已报名/已签到=黄（流程进行中） */
+const enrollTone = (value) => statusTone(value, [4], [], [1, 3])
+
+/* 审核状态配色：通过=绿；驳回=红；待审核=黄 */
+const verifyTone = (value) => statusTone(value, [1], [2], [0, 3])
+
 const profile = ref(null)
 const overview = ref(null)
+
 const histories = ref([])
 const credits = ref([])
 const tags = ref([])

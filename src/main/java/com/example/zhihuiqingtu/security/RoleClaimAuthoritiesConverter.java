@@ -1,6 +1,6 @@
 package com.example.zhihuiqingtu.security;
 
-import com.example.zhihuiqingtu.enums.UserRoleEnum;
+import com.example.zhihuiqingtu.user.enums.UserRoleEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.core.GrantedAuthority;

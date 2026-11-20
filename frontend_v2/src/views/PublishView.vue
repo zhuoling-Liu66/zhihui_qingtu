@@ -1,147 +1,199 @@
 <template>
   <main class="page page-publish">
-    <section class="page-section publish-layout">
-      <div class="publish-intro card-surface">
-        <p class="section-head__kicker">{{ isEditMode ? '活动编辑' : '发布页' }}</p>
-        <h1>{{ isEditMode ? '修改活动信息并即时生效' : '创建即发布，封面上传也一起完成' }}</h1>
-        <p>
-          活动创建后默认进入已发布状态，后续只保留“已发布 / 已取消”的简化管理。
-          现在同一套表单也支持编辑已有活动，方便发布者随时调整封面、时间、地点和标签。
-        </p>
-        <div class="publish-intro__tips">
-          <span>支持上传活动封面</span>
-          <span>第二课堂活动填写学分和学分类型</span>
-          <span>志愿活动填写服务时长</span>
+    <section class="page-section publish-shell">
+      <div v-if="!user" class="publish-gate card-surface">
+        <div class="publish-gate__icon">
+          <el-icon><Position /></el-icon>
+        </div>
+        <h1>登录后发布活动</h1>
+        <p>使用校园账号登录即可继续。</p>
+        <el-button type="warning" size="large" @click="openAuth?.()">登录</el-button>
+      </div>
+
+      <div v-else-if="!canPublish" class="publish-gate card-surface">
+        <div class="publish-gate__icon">
+          <el-icon><Lock /></el-icon>
+        </div>
+        <h1>当前账号不能在此发布活动</h1>
+        <p>学生和老师可以发布无学分活动；学分活动请使用管理端运营账号发布。</p>
+        <div class="publish-gate__actions">
+          <el-button type="warning" size="large" @click="router.push('/')">返回首页</el-button>
         </div>
       </div>
 
-      <div class="publish-form-wrap card-surface">
-        <div v-if="!user" class="empty-login">
-          <h3>登录后才能发布或编辑活动</h3>
-          <p>请先完成登录，再回来管理校园活动。</p>
+      <div v-else-if="editLoadFailed" class="publish-gate card-surface">
+        <div class="publish-gate__icon">
+          <el-icon><WarningFilled /></el-icon>
         </div>
+        <h1>活动加载失败</h1>
+        <p>活动可能已被删除，或链接有误。</p>
+        <div class="publish-gate__actions">
+          <el-button plain @click="router.push('/my-published')">返回我的活动</el-button>
+          <el-button type="warning" @click="loadEditActivity">重试</el-button>
+        </div>
+      </div>
 
-        <el-form v-else :model="form" label-position="top" class="publish-form">
-          <div class="cover-upload-panel">
-            <div class="cover-upload-panel__preview">
-              <CoverImage
-                v-if="form.coverUrl"
-                :src="form.coverUrl"
-                alt="活动封面预览"
-                fallback-class="cover-upload-panel__placeholder"
-                fallback-text="封面预览失败，请重新上传"
-              />
-              <div v-else class="cover-upload-panel__placeholder">
-                <strong>上传活动封面</strong>
-                <span>建议使用横向图片，列表卡片和详情页都会直接展示。</span>
+      <div v-else-if="editingCreditActivity" class="publish-gate card-surface">
+        <div class="publish-gate__icon">
+          <el-icon><Lock /></el-icon>
+        </div>
+        <h1>学分活动需在管理端维护</h1>
+        <p>带学分的第二课堂活动由管理端运营账号发布，并提交管理员审核。</p>
+        <div class="publish-gate__actions">
+          <el-button plain @click="router.push('/my-published')">返回我的活动</el-button>
+        </div>
+      </div>
+
+      <div v-else v-loading="loadingDetail" class="publish-sheet card-surface">
+        <header class="publish-head">
+          <h1>{{ isEditMode ? '编辑活动' : '发布活动' }}</h1>
+          <span class="publish-head__hint publish-head__hint--static">
+            <el-icon><InfoFilled /></el-icon>
+            <span>{{ modeTip }}</span>
+          </span>
+        </header>
+
+        <el-alert
+          class="publish-review-tip"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="活动发布后需管理员审核"
+          description="审核通过前不会出现在公开列表，也不能被报名；修改活动内容后会重新进入审核。"
+        />
+
+        <el-form
+          ref="formRef"
+          :model="form"
+          :rules="rules"
+          :disabled="loadingDetail"
+          label-position="top"
+          class="publish-form"
+          @submit.prevent="handleSubmit"
+        >
+          <div class="cover-field">
+            <span class="cover-field__label">活动封面<em>选填</em></span>
+            <div class="cover-field__row">
+              <div class="cover-field__preview" :class="{ 'cover-field__preview--filled': form.coverUrl }">
+                <CoverImage
+                  v-if="form.coverUrl"
+                  :src="form.coverUrl"
+                  alt="活动封面预览"
+                  fallback-class="cover-field__fallback"
+                  fallback-text="预览失败"
+                />
+                <div v-else class="cover-field__empty">
+                  <el-icon><Picture /></el-icon>
+                  <span>暂无封面</span>
+                </div>
+              </div>
+              <div class="cover-field__side">
+                <div class="cover-field__actions">
+                  <el-upload
+                    :show-file-list="false"
+                    :auto-upload="false"
+                    accept="image/*"
+                    :on-change="handleCoverChange"
+                  >
+                    <el-button :loading="coverUploading" type="warning" plain>
+                      {{ form.coverUrl ? '更换封面' : '上传封面' }}
+                    </el-button>
+                  </el-upload>
+                  <el-button v-if="form.coverUrl" plain @click="form.coverUrl = ''">移除</el-button>
+                </div>
+                <p class="cover-field__hint">建议 16:9 横图，不超过 5MB</p>
               </div>
             </div>
-            <div class="cover-upload-panel__actions">
-              <el-upload
-                :show-file-list="false"
-                :auto-upload="false"
-                accept="image/*"
-                :on-change="handleCoverChange"
-              >
-                <el-button :loading="coverUploading" type="warning">上传封面</el-button>
-              </el-upload>
-              <el-button v-if="form.coverUrl" plain @click="form.coverUrl = ''">移除封面</el-button>
+          </div>
+
+          <div class="publish-form__group">
+            <div class="grid-two">
+              <el-form-item label="活动标题" prop="activityTitle">
+                <el-input v-model="form.activityTitle" maxlength="255" placeholder="例如：周末篮球赛 / 社团团建" />
+              </el-form-item>
+              <el-form-item label="活动类型" prop="activityType">
+                <el-select v-model="form.activityType">
+                  <el-option :value="3" label="运动健身活动" />
+                  <el-option :value="4" label="兴趣团建活动" />
+                </el-select>
+                <p class="publish-form__hint">学分与志愿时长活动由管理端发布；客户端仅支持运动、兴趣类活动。</p>
+              </el-form-item>
             </div>
-          </div>
 
-          <div class="grid-two">
-            <el-form-item label="活动标题">
-              <el-input v-model="form.activityTitle" placeholder="例如：校园志愿服务招募" />
-            </el-form-item>
-            <el-form-item label="活动类型">
-              <el-select v-model="form.activityType">
-                <el-option :value="1" label="第二课堂学分活动" />
-                <el-option :value="2" label="志愿服务活动" />
-                <el-option :value="3" label="运动健身活动" />
-                <el-option :value="4" label="兴趣团建活动" />
-              </el-select>
-            </el-form-item>
-          </div>
-
-          <el-form-item label="活动描述">
-            <el-input
-              v-model="form.activityDesc"
-              type="textarea"
-              :rows="5"
-              placeholder="写清楚活动流程、参与对象、收获和注意事项"
-            />
-          </el-form-item>
-
-          <div class="grid-two">
-            <el-form-item v-if="form.activityType === 1" label="活动学分">
-              <el-input-number v-model="form.activityCredit" :min="0" :step="0.05" :precision="2" />
-            </el-form-item>
-            <el-form-item v-if="form.activityType === 1" label="学分类型">
-              <el-select v-model="form.creditType" placeholder="请选择学分类型">
-                <el-option :value="1" label="创新创业" />
-                <el-option :value="2" label="智育" />
-                <el-option :value="3" label="德育" />
-                <el-option :value="4" label="体育" />
-                <el-option :value="5" label="美育" />
-                <el-option :value="6" label="劳育" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="form.activityType === 2" label="志愿服务时长（小时）">
-              <el-input-number v-model="form.volunteerHours" :min="0" :step="0.5" :precision="1" />
-            </el-form-item>
-            <el-form-item label="最大参与人数">
-              <el-input-number v-model="form.maxParticipant" :min="1" :step="1" />
-            </el-form-item>
-          </div>
-
-          <div class="grid-two">
-            <el-form-item label="开始时间">
-              <el-date-picker
-                v-model="form.startTime"
-                type="datetime"
-                format="YYYY-MM-DD HH:mm"
-                value-format="YYYY-MM-DDTHH:mm:ss"
-              />
-            </el-form-item>
-            <el-form-item label="结束时间">
-              <el-date-picker
-                v-model="form.endTime"
-                type="datetime"
-                format="YYYY-MM-DD HH:mm"
-                value-format="YYYY-MM-DDTHH:mm:ss"
+            <el-form-item label="活动描述" prop="activityDesc">
+              <el-input
+                v-model="form.activityDesc"
+                type="textarea"
+                :rows="5"
+                placeholder="活动流程、参与对象和注意事项"
               />
             </el-form-item>
           </div>
 
-          <div class="grid-two">
-            <el-form-item label="活动地点">
-              <el-input v-model="form.activityLocation" placeholder="例如：大学生活动中心 201" />
-            </el-form-item>
-            <el-form-item label="活动标签">
-              <el-select v-model="form.tagIds" multiple collapse-tags placeholder="选择标签">
-                <el-option
-                  v-for="tag in tags"
-                  :key="tag.tagId"
-                  :label="tag.tagName"
-                  :value="tag.tagId"
+          <div class="publish-form__group">
+            <div class="grid-two">
+              <el-form-item label="开始时间" prop="startTime">
+                <el-date-picker
+                  v-model="form.startTime"
+                  type="datetime"
+                  format="YYYY-MM-DD HH:mm"
+                  value-format="YYYY-MM-DDTHH:mm:ss"
+                  placeholder="选择开始时间"
                 />
-              </el-select>
-            </el-form-item>
+              </el-form-item>
+              <el-form-item label="结束时间" prop="endTime">
+                <el-date-picker
+                  v-model="form.endTime"
+                  type="datetime"
+                  format="YYYY-MM-DD HH:mm"
+                  value-format="YYYY-MM-DDTHH:mm:ss"
+                  placeholder="选择结束时间"
+                />
+              </el-form-item>
+            </div>
+
+            <div class="grid-two">
+              <el-form-item label="活动地点" prop="activityLocation">
+                <el-input v-model="form.activityLocation" placeholder="例如：大学生活动中心 201" />
+              </el-form-item>
+              <el-form-item label="活动标签" prop="tagIds">
+                <el-select v-model="form.tagIds" multiple collapse-tags placeholder="选择标签">
+                  <el-option
+                    v-for="tag in tags"
+                    :key="tag.tagId"
+                    :label="tag.tagName"
+                    :value="tag.tagId"
+                  />
+                </el-select>
+              </el-form-item>
+            </div>
           </div>
 
-          <div class="publish-form__footer">
-            <el-alert
-              :title="modeHint"
-              type="warning"
-              :closable="false"
-              show-icon
-            />
-            <div class="publish-form__actions">
-              <el-button v-if="isEditMode" plain @click="router.push('/my-published')">返回我的活动</el-button>
-              <el-button :loading="submitting" type="warning" size="large" @click="handleSubmit">
-                {{ submitText }}
-              </el-button>
+          <div class="publish-form__group">
+            <div class="publish-facts">
+              <el-form-item label="人数上限" prop="maxParticipant">
+                <el-input-number v-model="form.maxParticipant" :min="1" :step="1" />
+              </el-form-item>
             </div>
+          </div>
+
+          <div class="publish-actions">
+            <el-button
+              v-if="isEditMode"
+              text
+              class="publish-actions__back"
+              @click="router.push('/my-published')"
+            >
+              返回我的活动
+            </el-button>
+            <el-button
+              :loading="submitting"
+              type="warning"
+              size="large"
+              native-type="submit"
+            >
+              {{ submitText }}
+            </el-button>
           </div>
         </el-form>
       </div>
@@ -150,9 +202,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, inject, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { InfoFilled, Lock, Picture, Position, WarningFilled } from '@element-plus/icons-vue'
 import CoverImage from '@/components/CoverImage.vue'
 import { activityApi } from '@/api/platform'
 import { useSession } from '@/composables/useSession'
@@ -160,19 +213,20 @@ import { useSession } from '@/composables/useSession'
 const route = useRoute()
 const router = useRouter()
 const { user } = useSession()
+const openAuth = inject('openAuth', null)
 
 const tags = ref([])
 const submitting = ref(false)
 const coverUploading = ref(false)
 const loadingDetail = ref(false)
+const editLoadFailed = ref(false)
+const editingCreditActivity = ref(false)
+const formRef = ref(null)
 
 const form = reactive({
   activityTitle: '',
   activityDesc: '',
-  activityType: 1,
-  activityCredit: 1,
-  creditType: 2,
-  volunteerHours: 2,
+  activityType: 3,
   coverUrl: '',
   startTime: '',
   endTime: '',
@@ -183,21 +237,45 @@ const form = reactive({
 
 const isEditMode = computed(() => Boolean(route.query.edit))
 const editingActivityId = computed(() => route.query.edit)
-const submitText = computed(() => (isEditMode.value ? '保存活动修改' : '创建并发布活动'))
-const modeHint = computed(() => {
-  if (form.activityType === 1) return '当前为第二课堂学分活动：需要填写学分和学分类型。'
-  if (form.activityType === 2) return '当前为志愿服务活动：只需要填写志愿服务时长，不需要设置学分。'
-  return '当前为非学分活动：系统会自动隐藏学分相关字段。'
-})
+const submitText = computed(() => (isEditMode.value ? '保存并重新提交审核' : '提交审核'))
+
+/* 学生和老师权限一致，都可以发布无学分活动 */
+const canPublish = computed(() => [1, 3].includes(Number(user.value?.userRole)))
+
+const modeTip = computed(() => (
+  isEditMode.value
+    ? '修改并保存后，活动会重新进入管理员审核队列。'
+    : '填写完成后提交管理员审核，审核通过后公开展示。'
+))
+
+const validateEndTime = (_rule, value, callback) => {
+  if (!value || !form.startTime) {
+    callback()
+    return
+  }
+  if (!(new Date(value) > new Date(form.startTime))) {
+    callback(new Error('结束时间需晚于开始时间'))
+    return
+  }
+  callback()
+}
+
+const rules = {
+  activityTitle: [{ required: true, message: '请填写活动标题', trigger: 'blur' }],
+  activityType: [{ required: true, message: '请选择活动类型', trigger: 'change' }],
+  startTime: [{ required: true, message: '请选择开始时间', trigger: 'change' }],
+  endTime: [
+    { required: true, message: '请选择结束时间', trigger: 'change' },
+    { validator: validateEndTime, trigger: 'change' },
+  ],
+  maxParticipant: [{ required: true, message: '请填写人数上限', trigger: 'change' }],
+}
 
 function resetForm() {
   Object.assign(form, {
     activityTitle: '',
     activityDesc: '',
-    activityType: 1,
-    activityCredit: 1,
-    creditType: 2,
-    volunteerHours: 2,
+    activityType: 3,
     coverUrl: '',
     startTime: '',
     endTime: '',
@@ -205,16 +283,14 @@ function resetForm() {
     maxParticipant: 30,
     tagIds: [],
   })
+  formRef.value?.clearValidate()
 }
 
 function fillForm(activity) {
   Object.assign(form, {
     activityTitle: activity.activityTitle || '',
     activityDesc: activity.activityDesc || '',
-    activityType: activity.activityType ?? 1,
-    activityCredit: activity.activityCredit ?? 1,
-    creditType: activity.creditType ?? 2,
-    volunteerHours: activity.volunteerHours ?? 2,
+    activityType: [3, 4].includes(Number(activity.activityType)) ? Number(activity.activityType) : 3,
     coverUrl: activity.coverUrl || '',
     startTime: activity.startTime || '',
     endTime: activity.endTime || '',
@@ -227,11 +303,21 @@ function fillForm(activity) {
 const handleCoverChange = async (uploadFile) => {
   if (!uploadFile?.raw) return
 
+  const file = uploadFile.raw
+  if (!file.type?.startsWith('image/')) {
+    ElMessage.error('请选择图片文件')
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.error('封面不能超过 5MB')
+    return
+  }
+
   coverUploading.value = true
   try {
-    const result = await activityApi.uploadCover(uploadFile.raw)
+    const result = await activityApi.uploadCover(file)
     form.coverUrl = result.coverUrl
-    ElMessage.success('活动封面上传成功')
+    ElMessage.success('封面上传成功')
   } finally {
     coverUploading.value = false
   }
@@ -241,9 +327,9 @@ const buildPayload = () => ({
   activityTitle: form.activityTitle,
   activityDesc: form.activityDesc,
   activityType: form.activityType,
-  activityCredit: form.activityType === 1 ? form.activityCredit : null,
-  creditType: form.activityType === 1 ? form.creditType : null,
-  volunteerHours: form.activityType === 2 ? form.volunteerHours : null,
+  activityCredit: null,
+  creditType: null,
+  volunteerHours: null,
   coverUrl: form.coverUrl || null,
   startTime: form.startTime,
   endTime: form.endTime,
@@ -253,41 +339,80 @@ const buildPayload = () => ({
 })
 
 const handleSubmit = async () => {
-  if (!user.value?.userId) return
+  if (!user.value?.userId || submitting.value) return
 
   submitting.value = true
   try {
+    const valid = await formRef.value?.validate().catch(() => false)
+    if (!valid) return
+
     if (isEditMode.value) {
-      // 不再传 operatorUserId：后端从 JWT 取当前登录用户并自行判定管理权限
       const updated = await activityApi.update(editingActivityId.value, buildPayload())
-      ElMessage.success('活动修改成功')
+      ElMessage.success('活动已更新，已重新提交审核')
       router.push({ name: 'activity-detail', params: { id: updated.activityId } })
       return
     }
 
-    // 不再传 publisherUserId：发布者 = 当前登录用户（由后端从 JWT 取）
     const created = await activityApi.create(buildPayload())
-    ElMessage.success(`活动发布成功，活动ID：${created.activityId}`)
-    router.push({ name: 'activity-detail', params: { id: created.activityId } })
+    ElMessage.success('活动已提交审核，请等待管理员处理')
+    router.push({ name: 'my-published' })
   } finally {
     submitting.value = false
   }
 }
 
+let editLoadToken = 0
+
 const loadEditActivity = async () => {
+  const requestId = ++editLoadToken
+
   if (!isEditMode.value) {
     resetForm()
+    editLoadFailed.value = false
+    editingCreditActivity.value = false
+    loadingDetail.value = false
     return
   }
 
   loadingDetail.value = true
+  editLoadFailed.value = false
+  editingCreditActivity.value = false
   try {
     const detail = await activityApi.detail(editingActivityId.value)
+    if (requestId !== editLoadToken) return
+    // 学分/志愿活动受发布规则约束，客户端不提供编辑入口，避免误改考核数据。
+    if ([1, 2].includes(Number(detail.activityType))) {
+      editingCreditActivity.value = true
+      return
+    }
     fillForm(detail)
+  } catch {
+    if (requestId === editLoadToken) {
+      editLoadFailed.value = true
+    }
   } finally {
-    loadingDetail.value = false
+    if (requestId === editLoadToken) {
+      loadingDetail.value = false
+    }
   }
 }
+
+const loadPageData = async () => {
+  if (!user.value?.userId) return
+  tags.value = await activityApi.tags()
+  await loadEditActivity()
+}
+
+onMounted(loadPageData)
+
+watch(
+  () => user.value?.userId,
+  (userId, previousId) => {
+    if (userId && userId !== previousId) {
+      loadPageData()
+    }
+  },
+)
 
 watch(
   () => route.query.edit,
@@ -295,9 +420,21 @@ watch(
     await loadEditActivity()
   },
 )
-
-onMounted(async () => {
-  tags.value = await activityApi.tags()
-  await loadEditActivity()
-})
 </script>
+
+<style scoped>
+.publish-review-tip {
+  margin-bottom: 18px;
+}
+
+.publish-head__hint--static {
+  cursor: default;
+}
+
+.publish-form__hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2, #888);
+}
+</style>

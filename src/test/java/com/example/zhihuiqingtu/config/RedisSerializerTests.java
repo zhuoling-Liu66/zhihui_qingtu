@@ -1,8 +1,8 @@
 package com.example.zhihuiqingtu.config;
 
 import com.example.zhihuiqingtu.common.PageResponse;
-import com.example.zhihuiqingtu.vo.activity.ActivityResponse;
-import com.example.zhihuiqingtu.vo.activity.ActivityTagVO;
+import com.example.zhihuiqingtu.activity.vo.ActivityResponse;
+import com.example.zhihuiqingtu.activity.vo.ActivityTagVO;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.SerializationException;
@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.example.zhihuiqingtu.activity.support.ActivityTagDataInitializer;
 
 /**
  * Redis 值序列化器行为测试。
@@ -139,7 +140,7 @@ class RedisSerializerTests {
 
         assertTrue(json.startsWith("{"), "应该是 JSON 对象，实际为：" + json);
         assertTrue(json.contains("\"@class\""), "缺少 @class 类型标记，说明 default typing 没生效");
-        assertTrue(json.contains("com.example.zhihuiqingtu.vo.activity.ActivityResponse"),
+        assertTrue(json.contains("com.example.zhihuiqingtu.activity.vo.ActivityResponse"),
                 "JSON 里应该能直接看到具体类名");
         assertTrue(json.contains("校园马拉松志愿服务"), "中文字段值应该可读，而不是被转义成乱码");
     }

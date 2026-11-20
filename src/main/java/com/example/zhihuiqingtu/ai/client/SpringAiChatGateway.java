@@ -96,6 +96,28 @@ public class SpringAiChatGateway {
     }
 
     /**
+     * 纯文本调用：不带工具，用于表格列识别等结构化抽取任务。
+     *
+     * <p>AI 未启用/未配置/调用失败时返回 {@code null}，由调用方降级为规则识别，
+     * 不把 AI 故障暴露成整个导入功能的不可用。
+     */
+    public String completeText(String systemPrompt, String userPrompt) {
+        if (!isAvailable()) {
+            return null;
+        }
+        try {
+            return chatClient.prompt()
+                    .system(systemPrompt)
+                    .user(userPrompt)
+                    .call()
+                    .content();
+        } catch (RuntimeException exception) {
+            log.warn("AI 结构化识别调用失败：{}", exception.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * 流式调用：每收到一段文本就回调 {@code onDelta}。
      *
      * <p>注意：工具调用发生在 Reactor 的线程上，因此工具里<b>不能</b>依赖

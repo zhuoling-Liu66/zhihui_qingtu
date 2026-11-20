@@ -2,20 +2,29 @@
   <div class="app-shell">
     <AppHeader @open-auth="authVisible = true" />
     <router-view />
-    <AuthDialog v-model="authVisible" />
     <!-- AI 助手：悬浮球 + 抽屉。未登录时点击会触发 require-auth 弹出登录框 -->
     <AiAssistant @require-auth="authVisible = true" />
+
+    <AuthDialog v-model="authVisible" />
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, provide, ref } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import AuthDialog from './components/AuthDialog.vue'
 import AiAssistant from './components/ai/AiAssistant.vue'
 import { setUnauthorizedHandler } from '@/composables/useSession'
 
 const authVisible = ref(false)
+
+/**
+ * 页面内主动拉起登录弹窗的入口。
+ * 未登录用户停在发布页等需要身份的操作时，不必再自己去找顶栏的头像按钮。
+ */
+provide('openAuth', () => {
+  authVisible.value = true
+})
 
 /**
  * 把"收到 401"这件事接到登录弹窗上。
@@ -34,3 +43,4 @@ onMounted(() => {
   })
 })
 </script>
+

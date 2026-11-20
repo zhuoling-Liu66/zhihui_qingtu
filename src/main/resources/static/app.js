@@ -43,6 +43,9 @@ const REVIEW_STATUS_LABELS = {
   2: "已驳回",
 };
 
+/** 本地会话在 localStorage 里的键名。抽成常量，避免多处硬编码字符串写不一致。 */
+const STORAGE_KEY = "zhihuiqingtu-current-user";
+
 const state = {
   currentUser: loadCurrentUser(),
   activityTags: [],
@@ -50,9 +53,6 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-
-/** 本地会话在 localStorage 里的键名。抽成常量，避免多处硬编码字符串写不一致。 */
-const STORAGE_KEY = "zhihuiqingtu-current-user";
 
 function loadCurrentUser() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -179,6 +179,22 @@ function ensureCurrentUser() {
   return state.currentUser;
 }
 
+function createTextElement(tagName, text, className) {
+  const element = document.createElement(tagName);
+  if (className) {
+    element.className = className;
+  }
+  element.textContent = text;
+  return element;
+}
+
+function createListItem(title, lines) {
+  const item = createTextElement("div", "", "list-item");
+  item.appendChild(createTextElement("h4", title));
+  lines.forEach((line) => item.appendChild(createTextElement("p", line)));
+  return item;
+}
+
 function renderKeyValueBoard(target, data) {
   const entries = Object.entries(data || {});
   if (!entries.length) {
@@ -187,19 +203,18 @@ function renderKeyValueBoard(target, data) {
     return;
   }
   target.classList.remove("empty-state");
-  target.innerHTML = entries
-    .map(([key, value]) => {
-      let displayValue = value;
-      if (Array.isArray(value)) {
-        displayValue = value.length ? value.join("、") : "无";
-      } else if (value && typeof value === "object") {
-        displayValue = JSON.stringify(value, null, 2);
-      } else {
-        displayValue = formatText(value);
-      }
-      return `<div class="list-item"><h4>${key}</h4><p>${displayValue}</p></div>`;
-    })
-    .join("");
+  const nodes = entries.map(([key, value]) => {
+    let displayValue = value;
+    if (Array.isArray(value)) {
+      displayValue = value.length ? value.join("、") : "无";
+    } else if (value && typeof value === "object") {
+      displayValue = JSON.stringify(value, null, 2);
+    } else {
+      displayValue = formatText(value);
+    }
+    return createListItem(key, [displayValue]);
+  });
+  target.replaceChildren(...nodes);
 }
 
 function renderList(target, items, renderItem) {
@@ -209,28 +224,25 @@ function renderList(target, items, renderItem) {
     return;
   }
   target.classList.remove("empty-state");
-  target.innerHTML = items.map(renderItem).join("");
+  target.replaceChildren(...items.map(renderItem));
 }
 
 function renderTagBoards() {
-  const content = state.activityTags.length
-    ? state.activityTags
-        .map((tag) => `<span class="tag-chip">#${tag.tagId} ${tag.tagName}</span>`)
-        .join("")
-    : "";
-
   ["#activity-tag-board", "#interest-tag-board"].forEach((selector) => {
     const board = $(selector);
     if (!board) {
       return;
     }
-    if (!content) {
+    if (!state.activityTags.length) {
       board.classList.add("empty-state");
       board.textContent = "暂无可用标签";
       return;
     }
     board.classList.remove("empty-state");
-    board.innerHTML = content;
+    const tags = state.activityTags.map((tag) =>
+      createTextElement("span", `#${tag.tagId} ${tag.tagName}`, "tag-chip")
+    );
+    board.replaceChildren(...tags);
   });
 }
 
@@ -357,13 +369,12 @@ function bindProfile() {
     try {
       const user = ensureCurrentUser();
       const data = await api(`/api/users/${encodeURIComponent(user.userId)}/histories`);
-      renderList($("#profile-extra"), data, (item) => `
-        <div class="list-item">
-          <h4>${formatText(item.activityTitle, "未知活动")} · 报名ID ${item.enrollId}</h4>
-          <p>活动ID ${item.activityId} · 类型 ${formatActivityType(item.activityType)} · 状态 ${formatEnrollmentStatus(item.enrollStatus)}</p>
-          <p>${formatText(item.startTime, "-")} 至 ${formatText(item.endTime, "-")}</p>
-        </div>
-      `);
+      renderList($("#profile-extra"), data, (item) =>
+        createListItem(`${formatText(item.activityTitle, "未知活动")} · 报名ID ${item.enrollId}`, [
+          `活动ID ${item.activityId} · 类型 ${formatActivityType(item.activityType)} · 状态 ${formatEnrollmentStatus(item.enrollStatus)}`,
+          `${formatText(item.startTime, "-")} 至 ${formatText(item.endTime, "-")}`,
+        ])
+      );
     } catch (error) {
       showMessage(error.message, "error");
     }
@@ -427,14 +438,15 @@ async function loadActivities() {
   const params = new URLSearchParams();
   form.forEach((value, key) => value && params.append(key, value));
   const data = await api(`/api/activities?${params.toString()}`);
-  renderList($("#activity-list"), data.records || [], (item) => `
-    <div class="list-item">
-      <h4>${item.activityTitle} <small>#${item.activityId}</small></h4>
-      <p>发布者 ${item.publisherUserId} · 类型 ${formatActivityType(item.activityType)} · 状态 ${formatActivityStatus(item.activityStatus)}</p>
-      <p>${buildActivityMetricLine(item)} · 人数 ${item.currentParticipant}/${item.maxParticipant} · 地点 ${formatText(item.activityLocation, "未设置")}</p>
-      <p>标签 ${(item.tags || []).map((tag) => `${tag.tagName}(${tag.tagId})`).join("、") || "无"}</p>
-    </div>
-  `);
+  renderList($("#activity-list"), data.records || [], (item) => {
+    const card = createListItem(item.activityTitle, [
+      `发布者 ${item.publisherUserId} · 类型 ${formatActivityType(item.activityType)} · 状态 ${formatActivityStatus(item.activityStatus)}`,
+      `${buildActivityMetricLine(item)} · 人数 ${item.currentParticipant}/${item.maxParticipant} · 地点 ${formatText(item.activityLocation, "未设置")}`,
+      `标签 ${(item.tags || []).map((tag) => `${tag.tagName}(${tag.tagId})`).join("、") || "无"}`,
+    ]);
+    card.firstElementChild.append(" ", createTextElement("small", `#${item.activityId}`));
+    return card;
+  });
 }
 
 function buildCreateActivityPayload(form) {
@@ -537,13 +549,12 @@ async function loadEnrollments() {
   // 客户端指定别人的学号也不会生效（后端已不接收该过滤条件）
   form.forEach((value, key) => value && params.append(key, value));
   const data = await api(`/api/enrollments?${params.toString()}`);
-  renderList($("#enrollment-list"), data.records || [], (item) => `
-    <div class="list-item">
-      <h4>${formatText(item.activityTitle, "未知活动")} · 报名ID ${item.enrollId}</h4>
-      <p>用户 ${item.userId} · 活动ID ${item.activityId} · 状态 ${formatEnrollmentStatus(item.enrollStatus)}</p>
-      <p>评分 ${formatText(item.feedbackScore, "未评价")} · ${formatText(item.feedbackContent, "暂无评价")}</p>
-    </div>
-  `);
+  renderList($("#enrollment-list"), data.records || [], (item) =>
+    createListItem(`${formatText(item.activityTitle, "未知活动")} · 报名ID ${item.enrollId}`, [
+      `用户 ${item.userId} · 活动ID ${item.activityId} · 状态 ${formatEnrollmentStatus(item.enrollStatus)}`,
+      `评分 ${formatText(item.feedbackScore, "未评价")} · ${formatText(item.feedbackContent, "暂无评价")}`,
+    ])
+  );
 }
 
 function bindEnrollments() {
@@ -644,14 +655,13 @@ async function loadTeams() {
   const params = new URLSearchParams();
   form.forEach((value, key) => value && params.append(key, value));
   const data = await api(`/api/teams?${params.toString()}`);
-  renderList($("#team-list"), data.records || [], (item) => `
-    <div class="list-item">
-      <h4>${item.teamName} · 队伍ID ${item.teamId}</h4>
-      <p>活动ID ${formatText(item.activityId)} · 队长 ${item.leaderUserId} · 状态 ${formatText(item.teamStatus)}</p>
-      <p>${formatText(item.teamDesc, "暂无简介")}</p>
-      <p>人数 ${item.currentSize}/${item.maxSize}</p>
-    </div>
-  `);
+  renderList($("#team-list"), data.records || [], (item) =>
+    createListItem(`${item.teamName} · 队伍ID ${item.teamId}`, [
+      `活动ID ${formatText(item.activityId)} · 队长 ${item.leaderUserId} · 状态 ${formatText(item.teamStatus)}`,
+      formatText(item.teamDesc, "暂无简介"),
+      `人数 ${item.currentSize}/${item.maxSize}`,
+    ])
+  );
 }
 
 function bindTeams() {
@@ -761,13 +771,12 @@ async function loadCredits() {
   // 客户端指定学号不会绕过这个判定
   form.forEach((value, key) => value && params.append(key, value));
   const data = await api(`/api/credits?${params.toString()}`);
-  renderList($("#credit-list"), data.records || [], (item) => `
-    <div class="list-item">
-      <h4>学分记录 ${item.recordId}</h4>
-      <p>用户 ${item.userId} · 活动ID ${item.activityId} · 学分 ${formatText(item.credit, 0)}</p>
-      <p>类型 ${formatCreditType(item.creditType)} · 审核状态 ${formatReviewStatus(item.verifyStatus)} · 驳回原因 ${formatText(item.rejectReason)}</p>
-    </div>
-  `);
+  renderList($("#credit-list"), data.records || [], (item) =>
+    createListItem(`学分记录 ${item.recordId}`, [
+      `用户 ${item.userId} · 活动ID ${item.activityId} · 学分 ${formatText(item.credit, 0)}`,
+      `类型 ${formatCreditType(item.creditType)} · 审核状态 ${formatReviewStatus(item.verifyStatus)} · 驳回原因 ${formatText(item.rejectReason)}`,
+    ])
+  );
 }
 
 async function loadCreditStatistics() {
