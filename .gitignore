@@ -71,3 +71,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# 本地 UI 审核截图与工具，不提交
+frontend_v2/.review-gate-*.png
+frontend_v2/.review-tools/
